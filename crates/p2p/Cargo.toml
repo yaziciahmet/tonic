@@ -1,7 +1,12 @@
 [package]
-name = "p2p"
+name = "tonic-p2p"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
 authors = { workspace = true }
 repository = { workspace = true }
+
+[dependencies]
+futures = { workspace = true }
+libp2p = { version = "0.54", features = ["tokio", "macros", "mdns", "gossipsub", "tcp", "noise", "yamux", "quic"]}
+tokio = { workspace = true }
