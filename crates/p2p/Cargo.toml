@@ -7,7 +7,6 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-futures = { workspace = true }
 libp2p = { version = "0.54", default-features = false, features = [
   "gossipsub",
   "identify",
@@ -21,3 +20,5 @@ libp2p = { version = "0.54", default-features = false, features = [
 ] }
 sha2 = { workspace = true }
 tokio = { workspace = true }
+tonic = { path = "../../bin/tonic" }
+tracing = { workspace = true }
