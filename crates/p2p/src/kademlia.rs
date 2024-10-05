@@ -4,7 +4,7 @@ use libp2p::StreamProtocol;
 
 use crate::config::Config;
 
-pub fn build_kademlia_behaviour(p2p_config: &Config) -> kad::Behaviour<MemoryStore> {
+pub(crate) fn build_kademlia_behaviour(p2p_config: &Config) -> kad::Behaviour<MemoryStore> {
     let local_peer_id = p2p_config.keypair.public().to_peer_id();
 
     let memory_store = MemoryStore::new(local_peer_id);

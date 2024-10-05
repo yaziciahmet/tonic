@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::config::Config;
 
-pub fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
+pub(crate) fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
     gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(p2p_config.keypair.clone()),
         default_gossipsub_config(),

@@ -57,12 +57,12 @@ impl P2PService {
             .listen_on(multiaddr)
             .expect("Swarm to start listening");
 
-        tokio::time::timeout(Duration::from_secs(5), self.await_listeners_address())
+        tokio::time::timeout(Duration::from_secs(5), self.await_listen_address())
             .await
             .expect("P2PService to get a new listen address");
     }
 
-    async fn await_listeners_address(&mut self) {
+    async fn await_listen_address(&mut self) {
         loop {
             if let SwarmEvent::NewListenAddr { .. } = self.swarm.select_next_some().await {
                 break;
