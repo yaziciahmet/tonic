@@ -54,7 +54,7 @@ mod tests {
     pub fn test_init_p2p_service() {
         let p2p_config = Config {
             keypair: Keypair::generate_ed25519(),
-            network_name: "testet".to_owned(),
+            network_name: "testnet".to_owned(),
             tcp_port: 8888,
             connection_idle_timeout: Some(Duration::from_secs(30)),
         };
