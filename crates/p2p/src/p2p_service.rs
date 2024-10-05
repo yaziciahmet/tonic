@@ -47,13 +47,15 @@ impl P2PService {
 
     pub async fn start(&mut self) {
         let peer_id = self.local_peer_id;
-        let multiaddr = format!("/ip4/0.0.0.0/tcp/{}", self.tcp_port).parse::<Multiaddr>().expect("Multiaddress parsing to succeed");
+        let multiaddr = format!("/ip4/0.0.0.0/tcp/{}", self.tcp_port)
+            .parse::<Multiaddr>()
+            .expect("Multiaddress parsing to succeed");
 
-        tracing::info!(
-            "The p2p service starts on the `{multiaddr}` with `{peer_id}`"
-        );
+        tracing::info!("The p2p service starts on the `{multiaddr}` with `{peer_id}`");
 
-        self.swarm.listen_on(multiaddr).expect("Swarm to start listening");
+        self.swarm
+            .listen_on(multiaddr)
+            .expect("Swarm to start listening");
 
         tokio::time::timeout(Duration::from_secs(5), self.await_listeners_address())
             .await
@@ -62,8 +64,7 @@ impl P2PService {
 
     async fn await_listeners_address(&mut self) {
         loop {
-            if let SwarmEvent::NewListenAddr { .. } = self.swarm.select_next_some().await
-            {
+            if let SwarmEvent::NewListenAddr { .. } = self.swarm.select_next_some().await {
                 break;
             }
         }
