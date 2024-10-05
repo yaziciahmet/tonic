@@ -15,9 +15,8 @@ pub fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
 
 fn default_gossipsub_config() -> gossipsub::Config {
     // Message id function which will prevent sending the same message twice
-    let message_id_fn = |message: &gossipsub::Message| {
-        MessageId::from(&Sha256::digest(&message.data)[..])
-    }; 
+    let message_id_fn =
+        |message: &gossipsub::Message| MessageId::from(&Sha256::digest(&message.data)[..]);
 
     gossipsub::ConfigBuilder::default()
         .heartbeat_interval(Duration::from_secs(10))

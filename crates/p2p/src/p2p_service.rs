@@ -32,6 +32,9 @@ impl P2PService {
             })
             .build();
 
-        Self { local_peer_id, swarm }
+        Self {
+            local_peer_id,
+            swarm,
+        }
     }
 }

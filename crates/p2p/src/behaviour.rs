@@ -1,10 +1,10 @@
-use libp2p::{kad, gossipsub, identify};
 use libp2p::swarm::NetworkBehaviour;
+use libp2p::{gossipsub, identify, kad};
 
 use crate::config::Config;
-use crate::kademlia::build_kademlia_behaviour;
 use crate::gossipsub::build_gossipsub_behaviour;
 use crate::identify::build_identify_behaviour;
+use crate::kademlia::build_kademlia_behaviour;
 
 #[derive(NetworkBehaviour)]
 pub struct TonicBehaviour {
@@ -22,6 +22,10 @@ impl TonicBehaviour {
         let kademlia = build_kademlia_behaviour(p2p_config);
         let identify = build_identify_behaviour(p2p_config);
 
-        Self { gossipsub, kademlia, identify }
+        Self {
+            gossipsub,
+            kademlia,
+            identify,
+        }
     }
 }

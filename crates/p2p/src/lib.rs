@@ -1,8 +1,8 @@
 mod behaviour;
 mod config;
-mod kademlia;
 mod gossipsub;
 mod identify;
+mod kademlia;
 mod p2p_service;
 
 // use futures::stream::StreamExt;
