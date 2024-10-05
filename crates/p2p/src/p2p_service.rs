@@ -12,7 +12,6 @@ pub struct P2PService {
 
 impl P2PService {
     pub fn new(config: Config) -> Self {
-        let local_peer_id = config.keypair.public().to_peer_id();
         let swarm = SwarmBuilder::with_existing_identity(config.keypair.clone())
             .with_tokio()
             .with_tcp(
@@ -32,9 +31,33 @@ impl P2PService {
             })
             .build();
 
+        let local_peer_id = config.keypair.public().to_peer_id();
+
         Self {
             local_peer_id,
             swarm,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use libp2p::identity::Keypair;
+
+    use crate::config::Config;
+
+    use super::P2PService;
+
+    #[test]
+    pub fn test_init_p2p_service() {
+        let p2p_config = Config {
+            keypair: Keypair::generate_ed25519(),
+            network_name: "testet".to_owned(),
+            tcp_port: 8888,
+            connection_idle_timeout: Some(Duration::from_secs(30)),
+        };
+        P2PService::new(p2p_config);
     }
 }

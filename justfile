@@ -17,3 +17,7 @@ lint:
 # Format everything.
 fmt:
     cargo fmt --all
+
+# Test everything
+test:
+    cargo test --workspace --all-targets --all-features
