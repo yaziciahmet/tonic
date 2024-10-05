@@ -1,3 +1,10 @@
+mod behaviour;
+mod config;
+mod kademlia;
+mod gossipsub;
+mod identify;
+mod p2p_service;
+
 // use futures::stream::StreamExt;
 // use libp2p::{Swarm, SwarmBuilder};
 // use libp2p::{gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
