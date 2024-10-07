@@ -18,6 +18,8 @@ libp2p = { version = "0.54", default-features = false, features = [
   "tokio",
   "yamux",
 ] }
+serde = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true }
 tonic = { path = "../../bin/tonic" }

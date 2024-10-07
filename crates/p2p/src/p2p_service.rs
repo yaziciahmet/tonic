@@ -1,11 +1,13 @@
 use std::time::Duration;
 
 use libp2p::futures::StreamExt;
+use libp2p::gossipsub::{MessageId, PublishError};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 
 use crate::behaviour::TonicBehaviour;
 use crate::config::Config;
+use crate::gossipsub::messages::GossipsubMessage;
 
 pub struct P2PService {
     /// Local peer id
@@ -68,6 +70,18 @@ impl P2PService {
                 break;
             }
         }
+    }
+
+    pub fn publish_message(
+        &mut self,
+        message: GossipsubMessage,
+    ) -> Result<MessageId, PublishError> {
+        let topic = message.topic();
+        let data = message
+            .serialize()
+            .map_err(|err| PublishError::TransformFailed(err))?;
+
+        self.swarm.behaviour_mut().gossipsub.publish(topic, data)
     }
 }
 

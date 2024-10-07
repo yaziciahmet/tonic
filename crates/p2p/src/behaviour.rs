@@ -7,7 +7,7 @@ use crate::identify::build_identify_behaviour;
 use crate::kademlia::build_kademlia_behaviour;
 
 #[derive(NetworkBehaviour)]
-pub(crate) struct TonicBehaviour {
+pub struct TonicBehaviour {
     /// Message propagation behaviour Gossipsub
     pub(crate) gossipsub: gossipsub::Behaviour,
     /// Discovery behaviour Kademlia
@@ -17,7 +17,7 @@ pub(crate) struct TonicBehaviour {
 }
 
 impl TonicBehaviour {
-    pub(crate) fn new(p2p_config: &Config) -> Self {
+    pub fn new(p2p_config: &Config) -> Self {
         let gossipsub = build_gossipsub_behaviour(p2p_config);
         let kademlia = build_kademlia_behaviour(p2p_config);
         let identify = build_identify_behaviour(p2p_config);
