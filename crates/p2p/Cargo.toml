@@ -22,5 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true }
-tonic = { path = "../../bin/tonic" }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tonic = { workspace = true }
