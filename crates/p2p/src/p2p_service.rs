@@ -7,7 +7,18 @@ use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 
 use crate::behaviour::TonicBehaviour;
 use crate::config::Config;
-use crate::gossipsub::messages::GossipsubMessage;
+use crate::gossipsub::{GossipMessage, GossipTopics};
+
+struct NetworkMetadata {
+    topics: GossipTopics,
+}
+
+impl NetworkMetadata {
+    fn new(p2p_config: &Config) -> Self {
+        let topics = GossipTopics::new(&p2p_config.network_name);
+        Self { topics }
+    }
+}
 
 pub struct P2PService {
     /// Local peer id
@@ -15,6 +26,7 @@ pub struct P2PService {
 
     swarm: Swarm<TonicBehaviour>,
     tcp_port: u16,
+    network_metadata: NetworkMetadata,
 }
 
 impl P2PService {
@@ -40,10 +52,13 @@ impl P2PService {
 
         let local_peer_id = config.keypair.public().to_peer_id();
 
+        let network_metadata = NetworkMetadata::new(&config);
+
         Self {
             local_peer_id,
             swarm,
             tcp_port: config.tcp_port,
+            network_metadata,
         }
     }
 
@@ -72,23 +87,24 @@ impl P2PService {
         }
     }
 
-    pub fn publish_message(
-        &mut self,
-        message: GossipsubMessage,
-    ) -> Result<MessageId, PublishError> {
-        let topic = message.topic();
+    pub fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
+        let topic_hash = self
+            .network_metadata
+            .topics
+            .get_topic_hash_from_message(&message);
         let data = message
             .serialize()
             .map_err(|err| PublishError::TransformFailed(err))?;
 
-        self.swarm.behaviour_mut().gossipsub.publish(topic, data)
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic_hash, data)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use libp2p::identity::Keypair;
 
     use crate::config::Config;
@@ -97,15 +113,24 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_start_p2p_service() {
-        let p2p_config = Config {
+        tonic::initialize_tracing(tracing::Level::DEBUG);
+        let config1 = Config {
             keypair: Keypair::generate_ed25519(),
             network_name: "testnet".to_owned(),
-            tcp_port: 0,
-            connection_idle_timeout: Some(Duration::from_secs(30)),
+            tcp_port: 10001,
+            connection_idle_timeout: None,
         };
+        let mut node1_p2p = P2PService::new(config1.clone());
 
-        let mut p2p_service = P2PService::new(p2p_config);
+        let config2 = Config {
+            keypair: Keypair::generate_ed25519(),
+            network_name: "testnet".to_owned(),
+            tcp_port: 10002,
+            connection_idle_timeout: None,
+        };
+        let mut node2_p2p = P2PService::new(config2);
 
-        p2p_service.start().await;
+        node1_p2p.start().await;
+        node2_p2p.start().await;
     }
 }

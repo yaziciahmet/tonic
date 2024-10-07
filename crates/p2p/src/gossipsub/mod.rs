@@ -1,18 +1,32 @@
+mod messages;
+mod topics;
+
 use std::time::Duration;
 
-use libp2p::gossipsub::{self, MessageAuthenticity, MessageId};
+use libp2p::gossipsub::{self, MessageAuthenticity, MessageId, Sha256Topic};
+pub use messages::*;
 use sha2::{Digest, Sha256};
+pub use topics::*;
 
 use crate::config::Config;
 
-pub mod messages;
-
 pub fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
-    gossipsub::Behaviour::new(
+    let mut gossipsub = gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(p2p_config.keypair.clone()),
         default_gossipsub_config(),
     )
-    .expect("gossipsub::Behaviour to be initialized")
+    .expect("gossipsub::Behaviour to be initialized");
+
+    let topics = vec![DUMMY_TOPIC];
+    // Subscribe to gossip topics
+    for topic in topics {
+        let t = Sha256Topic::new(format!("{}/{}", topic, p2p_config.network_name));
+        gossipsub
+            .subscribe(&t)
+            .expect("Subscription to topic {topic} to be successful");
+    }
+
+    gossipsub
 }
 
 fn default_gossipsub_config() -> gossipsub::Config {
