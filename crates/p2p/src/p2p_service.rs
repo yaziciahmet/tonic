@@ -105,12 +105,9 @@ impl P2PService {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use libp2p::identity::Keypair;
 
     use crate::config::Config;
-    use crate::gossipsub::GossipMessage;
 
     use super::P2PService;
 
@@ -127,7 +124,6 @@ mod tests {
         let mut node1_p2p = P2PService::new(config1.clone());
 
         node1_p2p.start().await;
-        tokio::time::sleep(Duration::from_secs(3)).await;
 
         let node1_multiaddr = format!(
             "/ip4/127.0.0.1/tcp/{}/p2p/{}",
@@ -146,10 +142,5 @@ mod tests {
         let mut node2_p2p = P2PService::new(config2);
 
         node2_p2p.start().await;
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
-
-        // node2_p2p.publish_message(GossipMessage::Dummy(10)).unwrap();
-        tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }
