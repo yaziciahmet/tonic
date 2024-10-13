@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use libp2p::futures::StreamExt;
-use libp2p::gossipsub::{MessageId, PublishError};
+use libp2p::gossipsub::{self, MessageId, PublishError};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 
-use crate::behaviour::TonicBehaviour;
+use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
 use crate::gossipsub::{GossipMessage, GossipTopics};
 
@@ -99,6 +99,64 @@ impl P2PService {
         self.swarm
             .behaviour_mut()
             .publish_message(topic_hash, encoded_data)
+    }
+
+    pub async fn next_event(&mut self) -> Option<TonicBehaviourEvent> {
+        let event = self.swarm.select_next_some().await;
+        tracing::debug!(?event);
+
+        match event {
+            SwarmEvent::Behaviour(event) => self.handle_behaviour_event(event),
+            SwarmEvent::ListenerClosed {
+                addresses, reason, ..
+            } => {
+                tracing::info!("p2p listener(s) `{addresses:?}` closed with `{reason:?}`");
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_behaviour_event(
+        &mut self,
+        event: TonicBehaviourEvent,
+    ) -> Option<TonicBehaviourEvent> {
+        match event {
+            TonicBehaviourEvent::Gossipsub(event) => self.handle_gossipsub_event(event),
+            _ => None,
+        }
+    }
+
+    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) -> Option<TonicBehaviourEvent> {
+        match event {
+            gossipsub::Event::Message {
+                propagation_source,
+                message_id,
+                message,
+            } => {
+                let tag = self
+                    .network_metadata
+                    .topics
+                    .get_gossip_tag(&message.topic)?;
+                match GossipMessage::deserialize(&tag, &message.data) {
+                    Ok(_message) => {
+                        // TODO: Implement a custom TonicBehaviourEvent, and handle return here
+                        None
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?message_id,
+                            ?propagation_source,
+                            ?message,
+                            ?err,
+                            "Failed to deserialize gossip message"
+                        );
+                        None
+                    }
+                }
+            }
+            _ => None,
+        }
     }
 }
 
