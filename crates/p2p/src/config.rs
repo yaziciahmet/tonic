@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use libp2p::identity::Keypair;
+use libp2p::Multiaddr;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -14,6 +15,8 @@ pub struct Config {
     pub tcp_port: u16,
 
     // `DiscoveryBehaviour` related fields
+    /// Multiaddresses of discovery initiation nodes
+    pub bootstrap_nodes: Vec<Multiaddr>,
     /// Connection timeout duration on idle connections
     pub connection_idle_timeout: Option<Duration>,
 }

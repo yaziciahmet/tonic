@@ -105,32 +105,51 @@ impl P2PService {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use libp2p::identity::Keypair;
 
     use crate::config::Config;
+    use crate::gossipsub::GossipMessage;
 
     use super::P2PService;
 
     #[tokio::test]
     pub async fn test_start_p2p_service() {
-        tonic::initialize_tracing(tracing::Level::DEBUG);
+        tonic::initialize_tracing(tracing::Level::TRACE);
         let config1 = Config {
             keypair: Keypair::generate_ed25519(),
             network_name: "testnet".to_owned(),
             tcp_port: 10001,
             connection_idle_timeout: None,
+            bootstrap_nodes: vec![],
         };
         let mut node1_p2p = P2PService::new(config1.clone());
+
+        node1_p2p.start().await;
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let node1_multiaddr = format!(
+            "/ip4/127.0.0.1/tcp/{}/p2p/{}",
+            config1.tcp_port, node1_p2p.local_peer_id
+        )
+        .parse()
+        .unwrap();
 
         let config2 = Config {
             keypair: Keypair::generate_ed25519(),
             network_name: "testnet".to_owned(),
             tcp_port: 10002,
             connection_idle_timeout: None,
+            bootstrap_nodes: vec![node1_multiaddr],
         };
         let mut node2_p2p = P2PService::new(config2);
 
-        node1_p2p.start().await;
         node2_p2p.start().await;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        // node2_p2p.publish_message(GossipMessage::Dummy(10)).unwrap();
+        tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }
