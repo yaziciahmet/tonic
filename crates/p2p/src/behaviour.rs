@@ -1,3 +1,4 @@
+use libp2p::gossipsub::{MessageId, PublishError, TopicHash};
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{gossipsub, identify, kad};
 
@@ -27,5 +28,13 @@ impl TonicBehaviour {
             kademlia,
             identify,
         }
+    }
+
+    pub fn publish_message(
+        &mut self,
+        topic_hash: TopicHash,
+        encoded_data: Vec<u8>,
+    ) -> Result<MessageId, PublishError> {
+        self.gossipsub.publish(topic_hash, encoded_data)
     }
 }

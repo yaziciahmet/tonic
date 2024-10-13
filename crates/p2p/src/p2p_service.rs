@@ -92,14 +92,13 @@ impl P2PService {
             .network_metadata
             .topics
             .get_topic_hash_from_message(&message);
-        let data = message
+        let encoded_data = message
             .serialize()
             .map_err(|err| PublishError::TransformFailed(err))?;
 
         self.swarm
             .behaviour_mut()
-            .gossipsub
-            .publish(topic_hash, data)
+            .publish_message(topic_hash, encoded_data)
     }
 }
 
