@@ -141,14 +141,13 @@ impl P2PService {
                 message_id,
                 message,
             } => {
-                let topic_hash = message.topic.clone();
-                let tag = self.network_metadata.topics.get_gossip_tag(&topic_hash)?;
+                let tag = self.network_metadata.topics.get_gossip_tag(&message.topic)?;
                 match GossipMessage::deserialize(&tag, &message.data) {
-                    Ok(message) => Some(TonicP2PEvent::GossipsubMessage {
+                    Ok(decoded_message) => Some(TonicP2PEvent::GossipsubMessage {
                         peer_id: propagation_source,
                         message_id,
-                        topic_hash,
-                        message,
+                        topic_hash: message.topic,
+                        message: decoded_message,
                     }),
                     Err(err) => {
                         tracing::warn!(
