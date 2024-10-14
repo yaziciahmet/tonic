@@ -1,13 +1,23 @@
 use std::time::Duration;
 
 use libp2p::futures::StreamExt;
-use libp2p::gossipsub::{self, MessageId, PublishError};
+use libp2p::gossipsub::{self, MessageId, PublishError, TopicHash};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
 use crate::gossipsub::{GossipMessage, GossipTopics};
+
+#[derive(Clone, Debug)]
+pub enum TonicP2PEvent {
+    GossipsubMessage {
+        peer_id: PeerId,
+        message_id: MessageId,
+        topic_hash: TopicHash,
+        message: GossipMessage,
+    },
+}
 
 struct NetworkMetadata {
     topics: GossipTopics,
@@ -101,7 +111,7 @@ impl P2PService {
             .publish_message(topic_hash, encoded_data)
     }
 
-    pub async fn next_event(&mut self) -> Option<TonicBehaviourEvent> {
+    pub async fn next_event(&mut self) -> Option<TonicP2PEvent> {
         let event = self.swarm.select_next_some().await;
         tracing::debug!(?event);
 
@@ -110,39 +120,36 @@ impl P2PService {
             SwarmEvent::ListenerClosed {
                 addresses, reason, ..
             } => {
-                tracing::info!("p2p listener(s) `{addresses:?}` closed with `{reason:?}`");
+                tracing::info!("P2P listener(s) `{addresses:?}` closed with `{reason:?}`");
                 None
             }
             _ => None,
         }
     }
 
-    fn handle_behaviour_event(
-        &mut self,
-        event: TonicBehaviourEvent,
-    ) -> Option<TonicBehaviourEvent> {
+    fn handle_behaviour_event(&mut self, event: TonicBehaviourEvent) -> Option<TonicP2PEvent> {
         match event {
             TonicBehaviourEvent::Gossipsub(event) => self.handle_gossipsub_event(event),
             _ => None,
         }
     }
 
-    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) -> Option<TonicBehaviourEvent> {
+    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) -> Option<TonicP2PEvent> {
         match event {
             gossipsub::Event::Message {
                 propagation_source,
                 message_id,
                 message,
             } => {
-                let tag = self
-                    .network_metadata
-                    .topics
-                    .get_gossip_tag(&message.topic)?;
+                let topic_hash = message.topic.clone();
+                let tag = self.network_metadata.topics.get_gossip_tag(&topic_hash)?;
                 match GossipMessage::deserialize(&tag, &message.data) {
-                    Ok(_message) => {
-                        // TODO: Implement a custom TonicBehaviourEvent, and handle return here
-                        None
-                    }
+                    Ok(message) => Some(TonicP2PEvent::GossipsubMessage {
+                        peer_id: propagation_source,
+                        message_id,
+                        topic_hash,
+                        message,
+                    }),
                     Err(err) => {
                         tracing::warn!(
                             ?message_id,

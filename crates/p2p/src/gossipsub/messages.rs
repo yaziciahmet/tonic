@@ -5,7 +5,7 @@ pub enum GossipTopicTag {
     Dummy,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum GossipMessage {
     Dummy(u64),
 }
