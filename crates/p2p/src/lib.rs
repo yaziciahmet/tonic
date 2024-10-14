@@ -45,51 +45,80 @@ pub fn new_service_with_proxy(config: Config) -> (P2PService, P2PServiceProxy) {
 mod tests {
     use std::time::Duration;
 
-    use libp2p::identity::Keypair;
+    use libp2p::{identity::Keypair, Multiaddr, PeerId};
 
-    use crate::config::Config;
+    use crate::{config::Config, gossipsub::GossipMessage, P2PServiceProxy};
 
-    use super::P2PService;
-
-    #[tokio::test]
-    pub async fn test_start_p2p_service() {
-        tonic::initialize_tracing(tracing::Level::DEBUG);
-
-        let config1 = Config {
+    pub async fn initialize_node(
+        tcp_port: u16,
+        bootstrap_nodes: Vec<Multiaddr>,
+    ) -> (P2PServiceProxy, PeerId, Multiaddr) {
+        let config = Config {
             keypair: Keypair::generate_ed25519(),
             network_name: "testnet".to_owned(),
-            tcp_port: 10001,
+            tcp_port,
             connection_idle_timeout: None,
-            bootstrap_nodes: vec![],
+            bootstrap_nodes,
         };
-        let (mut node1_p2p, node1_p2p_proxy) = super::new_service_with_proxy(config1.clone());
+        let (mut p2p, p2p_proxy) = super::new_service_with_proxy(config.clone());
 
-        let node1_multiaddr = format!(
-            "/ip4/127.0.0.1/tcp/{}/p2p/{}",
-            config1.tcp_port, node1_p2p.local_peer_id
-        )
-        .parse()
-        .unwrap();
+        let peer_id = p2p.local_peer_id;
+        let multiaddr = format!("/ip4/127.0.0.1/tcp/{}/p2p/{}", config.tcp_port, peer_id,)
+            .parse()
+            .unwrap();
 
         tokio::spawn(async move {
-            node1_p2p.start().await;
+            p2p.start().await;
         });
+        // Sleep some time to ensure that p2p setup is complete
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let config2 = Config {
-            keypair: Keypair::generate_ed25519(),
-            network_name: "testnet".to_owned(),
-            tcp_port: 10002,
-            connection_idle_timeout: None,
-            bootstrap_nodes: vec![node1_multiaddr],
-        };
-        let (mut node2_p2p, node2_p2p_proxy) = super::new_service_with_proxy(config2);
+        (p2p_proxy, peer_id, multiaddr)
+    }
 
-        tokio::spawn(async move {
-            node2_p2p.start().await;
-        });
-        tokio::time::sleep(Duration::from_secs(5)).await;
+    #[tokio::test]
+    pub async fn test_p2p_initialize() {
+        let (_, _, addr1) = initialize_node(10001, vec![]).await;
+        initialize_node(10002, vec![addr1]).await;
+    }
 
-        let dummy_rx2 = node2_p2p_proxy.subscribe_dummy_messages();
+    #[tokio::test]
+    pub async fn test_gossipsub() {
+        let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(10001, vec![]).await;
+        let (node2_proxy, node2_peer_id, _) = initialize_node(10002, vec![node1_addr]).await;
+
+        let mut node2_rx = node2_proxy.subscribe_dummy_messages();
+
+        let value = 69;
+        node1_proxy
+            .publish_message(GossipMessage::Dummy(value))
+            .await
+            .unwrap();
+
+        let (received_peer_id, received_value) =
+            tokio::time::timeout(Duration::from_secs(1), node2_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(value, received_value);
+        assert_eq!(node1_peer_id, received_peer_id);
+
+        let mut node1_rx = node1_proxy.subscribe_dummy_messages();
+
+        let value = 42;
+        node2_proxy
+            .publish_message(GossipMessage::Dummy(value))
+            .await
+            .unwrap();
+
+        let (received_peer_id, received_value) =
+            tokio::time::timeout(Duration::from_secs(1), node1_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(value, received_value);
+        assert_eq!(node2_peer_id, received_peer_id);
     }
 }
