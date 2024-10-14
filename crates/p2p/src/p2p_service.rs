@@ -47,7 +47,7 @@ pub struct P2PService {
     /// Publish message request receiving channel
     publish_message_rx:
         bmrng::RequestReceiverStream<GossipMessage, Result<MessageId, PublishError>>,
-    ///
+    /// P2P event notification channel
     new_p2p_event_tx: mpsc::Sender<TonicP2PEvent>,
 }
 

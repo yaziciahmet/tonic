@@ -84,8 +84,8 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_gossipsub() {
-        let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(10001, vec![]).await;
-        let (node2_proxy, node2_peer_id, _) = initialize_node(10002, vec![node1_addr]).await;
+        let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(10003, vec![]).await;
+        let (node2_proxy, node2_peer_id, _) = initialize_node(10004, vec![node1_addr]).await;
 
         let mut node2_rx = node2_proxy.subscribe_dummy_messages();
 
