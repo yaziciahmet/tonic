@@ -41,44 +41,55 @@ pub fn new_service_with_proxy(config: Config) -> (P2PService, P2PServiceProxy) {
     (p2p_service, p2p_service_proxy)
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use libp2p::identity::Keypair;
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
 
-//     use crate::config::Config;
+    use libp2p::identity::Keypair;
 
-//     use super::P2PService;
+    use crate::config::Config;
 
-//     #[tokio::test]
-//     pub async fn test_start_p2p_service() {
-//         tonic::initialize_tracing(tracing::Level::TRACE);
-//         let config1 = Config {
-//             keypair: Keypair::generate_ed25519(),
-//             network_name: "testnet".to_owned(),
-//             tcp_port: 10001,
-//             connection_idle_timeout: None,
-//             bootstrap_nodes: vec![],
-//         };
-//         let mut node1_p2p = P2PService::new(config1.clone());
+    use super::P2PService;
 
-//         node1_p2p.start().await;
+    #[tokio::test]
+    pub async fn test_start_p2p_service() {
+        tonic::initialize_tracing(tracing::Level::DEBUG);
 
-//         let node1_multiaddr = format!(
-//             "/ip4/127.0.0.1/tcp/{}/p2p/{}",
-//             config1.tcp_port, node1_p2p.local_peer_id
-//         )
-//         .parse()
-//         .unwrap();
+        let config1 = Config {
+            keypair: Keypair::generate_ed25519(),
+            network_name: "testnet".to_owned(),
+            tcp_port: 10001,
+            connection_idle_timeout: None,
+            bootstrap_nodes: vec![],
+        };
+        let (mut node1_p2p, node1_p2p_proxy) = super::new_service_with_proxy(config1.clone());
 
-//         let config2 = Config {
-//             keypair: Keypair::generate_ed25519(),
-//             network_name: "testnet".to_owned(),
-//             tcp_port: 10002,
-//             connection_idle_timeout: None,
-//             bootstrap_nodes: vec![node1_multiaddr],
-//         };
-//         let mut node2_p2p = P2PService::new(config2);
+        let node1_multiaddr = format!(
+            "/ip4/127.0.0.1/tcp/{}/p2p/{}",
+            config1.tcp_port, node1_p2p.local_peer_id
+        )
+        .parse()
+        .unwrap();
 
-//         node2_p2p.start().await;
-//     }
-// }
+        tokio::spawn(async move {
+            node1_p2p.start().await;
+        });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let config2 = Config {
+            keypair: Keypair::generate_ed25519(),
+            network_name: "testnet".to_owned(),
+            tcp_port: 10002,
+            connection_idle_timeout: None,
+            bootstrap_nodes: vec![node1_multiaddr],
+        };
+        let (mut node2_p2p, node2_p2p_proxy) = super::new_service_with_proxy(config2);
+
+        tokio::spawn(async move {
+            node2_p2p.start().await;
+        });
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        let dummy_rx2 = node2_p2p_proxy.subscribe_dummy_messages();
+    }
+}

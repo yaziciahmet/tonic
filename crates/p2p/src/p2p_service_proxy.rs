@@ -71,10 +71,14 @@ fn notify_subscribers(
     match p2p_event {
         TonicP2PEvent::GossipsubMessage {
             peer_id, message, ..
-        } => match message {
-            GossipMessage::Dummy(value) => {
-                let _ = dummy_message_tx.send((peer_id, value));
+        } => {
+            tracing::debug!(?peer_id, ?message, "Received new gossip message from peer");
+
+            match message {
+                GossipMessage::Dummy(value) => {
+                    let _ = dummy_message_tx.send((peer_id, value));
+                }
             }
-        },
+        }
     };
 }

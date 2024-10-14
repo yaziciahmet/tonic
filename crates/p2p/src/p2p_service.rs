@@ -130,6 +130,8 @@ impl P2PService {
                     }
                 }
                 Some((message, responder)) = self.publish_message_rx.next() => {
+                    tracing::debug!(publish_message = ?message);
+
                     let result = self.publish_message(message);
                     responder.respond(result).expect("No bmrng respond error");
                 }
