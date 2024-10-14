@@ -292,6 +292,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bmrng"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d54df9073108f1558f90ae6c5bf5ab9c917c4185f5527b280c87a993cbead0ac"
+dependencies = [
+ "futures-core",
+ "tokio",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2855,6 +2865,8 @@ dependencies = [
 name = "tonic-p2p"
 version = "0.1.0"
 dependencies = [
+ "bmrng",
+ "futures",
  "libp2p",
  "serde",
  "serde_json",

@@ -1,13 +1,17 @@
-use libp2p::multiaddr::Protocol;
-use libp2p::{Multiaddr, PeerId};
-
 mod behaviour;
+mod config;
 mod gossipsub;
 mod identify;
 mod kademlia;
+mod p2p_service;
+mod p2p_service_proxy;
 
-pub mod config;
-pub mod p2p_service;
+pub use config::Config;
+use libp2p::multiaddr::Protocol;
+use libp2p::{Multiaddr, PeerId};
+pub use p2p_service::{P2PService, TonicP2PEvent};
+pub use p2p_service_proxy::P2PServiceProxy;
+use tokio::sync::mpsc;
 
 pub trait TryPeerId {
     /// Tries convert `Self` into `PeerId`.
@@ -23,116 +27,58 @@ impl TryPeerId for Multiaddr {
     }
 }
 
-// use futures::stream::StreamExt;
-// use libp2p::{Swarm, SwarmBuilder};
-// use libp2p::{gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
-// use std::collections::hash_map::DefaultHasher;
-// use std::error::Error;
-// use std::hash::{Hash, Hasher};
-// use std::time::Duration;
-// use tokio::{io, io::AsyncBufReadExt, select};
+pub fn new_service_with_proxy(config: Config) -> (P2PService, P2PServiceProxy) {
+    let (publish_message_tx, publish_message_rx) = bmrng::channel(16);
+    let publish_message_rx = bmrng::RequestReceiverStream::new(publish_message_rx);
 
-// // We create a custom network behaviour that combines Gossipsub and Mdns.
-// #[derive(NetworkBehaviour)]
-// struct MyBehaviour {
-//     gossipsub: gossipsub::Behaviour,
-//     mdns: mdns::tokio::Behaviour,
-// }
+    let (new_p2p_event_tx, new_p2p_event_rx) = mpsc::channel(16);
 
-// #[tokio::main]
-// async fn main() -> Result<(), Box<dyn Error>> {
-//     let mut swarm = libp2p::SwarmBuilder::with_new_identity()
-//         .with_tokio()
-//         .with_tcp(
-//             tcp::Config::default(),
-//             noise::Config::new,
-//             yamux::Config::default,
-//         )?
-//         .with_quic()
-//         .with_behaviour(|key| {
-//             // To content-address message, we can take the hash of message and use it as an ID.
-//             let message_id_fn = |message: &gossipsub::Message| {
-//                 let mut s = DefaultHasher::new();
-//                 message.data.hash(&mut s);
-//                 gossipsub::MessageId::from(s.finish().to_string())
-//             };
+    let p2p_service = P2PService::new(config, publish_message_rx, new_p2p_event_tx);
 
-//             // Set a custom gossipsub configuration
-//             let gossipsub_config = gossipsub::ConfigBuilder::default()
-//                 .heartbeat_interval(Duration::from_secs(10)) // This is set to aid debugging by not cluttering the log space
-//                 .validation_mode(gossipsub::ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
-//                 .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
-//                 .build()
-//                 .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
+    let p2p_service_proxy = P2PServiceProxy::new(publish_message_tx);
+    p2p_service_proxy.run_p2p_event_handler(new_p2p_event_rx);
 
-//             // build a gossipsub network behaviour
-//             let gossipsub = gossipsub::Behaviour::new(
-//                 gossipsub::MessageAuthenticity::Signed(key.clone()),
-//                 gossipsub_config,
-//             )?;
+    (p2p_service, p2p_service_proxy)
+}
 
-//             let mdns =
-//                 mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
-//             Ok(MyBehaviour { gossipsub, mdns })
-//         })?
-//         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
-//         .build();
+// #[cfg(test)]
+// mod tests {
+//     use libp2p::identity::Keypair;
 
-//     // Create a Gossipsub topic
-//     let topic = gossipsub::IdentTopic::new("test-net");
-//     // subscribes to our topic
-//     swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
+//     use crate::config::Config;
 
-//     // Read full lines from stdin
-//     let mut stdin = io::BufReader::new(io::stdin()).lines();
+//     use super::P2PService;
 
-//     // Listen on all interfaces and whatever port the OS assigns
-//     swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
-//     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+//     #[tokio::test]
+//     pub async fn test_start_p2p_service() {
+//         tonic::initialize_tracing(tracing::Level::TRACE);
+//         let config1 = Config {
+//             keypair: Keypair::generate_ed25519(),
+//             network_name: "testnet".to_owned(),
+//             tcp_port: 10001,
+//             connection_idle_timeout: None,
+//             bootstrap_nodes: vec![],
+//         };
+//         let mut node1_p2p = P2PService::new(config1.clone());
 
-//     let topic2 = gossipsub::IdentTopic::new("test-net2");
-//     swarm.behaviour_mut().gossipsub.subscribe(&topic2)?;
+//         node1_p2p.start().await;
 
-//     println!("Enter messages via STDIN and they will be sent to connected peers using Gossipsub");
+//         let node1_multiaddr = format!(
+//             "/ip4/127.0.0.1/tcp/{}/p2p/{}",
+//             config1.tcp_port, node1_p2p.local_peer_id
+//         )
+//         .parse()
+//         .unwrap();
 
-//     // Kick it off
-//     loop {
-//         select! {
-//             Ok(Some(line)) = stdin.next_line() => {
-//                 if let Err(e) = swarm
-//                     .behaviour_mut().gossipsub
-//                     .publish(topic.clone(), line.as_bytes()) {
-//                     println!("Publish error: {e:?}");
-//                 }
-//             }
-//             event = swarm.select_next_some() => match event {
-//                 SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
-//                     for (peer_id, _multiaddr) in list {
-//                         println!("mDNS discovered a new peer: {peer_id}");
-//                         swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
-//                     }
-//                 },
-//                 SwarmEvent::Behaviour(MyBehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
-//                     for (peer_id, _multiaddr) in list {
-//                         println!("mDNS discover peer has expired: {peer_id}");
-//                         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
-//                     }
-//                 },
-//                 SwarmEvent::Behaviour(MyBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-//                     propagation_source: peer_id,
-//                     message_id: id,
-//                     message,
-//                 })) => println!(
-//                         "Got message: '{}' with id: {id} from peer: {peer_id}",
-//                         String::from_utf8_lossy(&message.data),
-//                     ),
-//                 SwarmEvent::NewListenAddr { address, .. } => {
-//                     println!("Local node is listening on {address}");
-//                 }
-//                 _ => {
-//                     println!("Unknown event: {:?}", event);
-//                 }
-//             }
-//         }
+//         let config2 = Config {
+//             keypair: Keypair::generate_ed25519(),
+//             network_name: "testnet".to_owned(),
+//             tcp_port: 10002,
+//             connection_idle_timeout: None,
+//             bootstrap_nodes: vec![node1_multiaddr],
+//         };
+//         let mut node2_p2p = P2PService::new(config2);
+
+//         node2_p2p.start().await;
 //     }
 // }

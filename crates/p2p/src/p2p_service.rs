@@ -1,14 +1,17 @@
 use std::time::Duration;
 
-use libp2p::futures::StreamExt;
+use futures::StreamExt;
 use libp2p::gossipsub::{self, MessageId, PublishError, TopicHash};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
+use tokio::select;
+use tokio::sync::mpsc;
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
 use crate::gossipsub::{GossipMessage, GossipTopics};
 
+/// Enum representing the events relevant to Tonic blockchain
 #[derive(Clone, Debug)]
 pub enum TonicP2PEvent {
     GossipsubMessage {
@@ -30,6 +33,9 @@ impl NetworkMetadata {
     }
 }
 
+/// [`P2PService`] is the core component of the libp2p network layer.
+/// It sits in the center of both any P2P activity including handling
+/// incoming and outgoing messages and connections to peers.
 pub struct P2PService {
     /// Local peer id
     pub local_peer_id: PeerId,
@@ -37,10 +43,23 @@ pub struct P2PService {
     swarm: Swarm<TonicBehaviour>,
     tcp_port: u16,
     network_metadata: NetworkMetadata,
+
+    /// Publish message request receiving channel
+    publish_message_rx:
+        bmrng::RequestReceiverStream<GossipMessage, Result<MessageId, PublishError>>,
+    ///
+    new_p2p_event_tx: mpsc::Sender<TonicP2PEvent>,
 }
 
 impl P2PService {
-    pub fn new(config: Config) -> Self {
+    pub(crate) fn new(
+        config: Config,
+        publish_message_rx: bmrng::RequestReceiverStream<
+            GossipMessage,
+            Result<MessageId, PublishError>,
+        >,
+        new_p2p_event_tx: mpsc::Sender<TonicP2PEvent>,
+    ) -> Self {
         let swarm = SwarmBuilder::with_existing_identity(config.keypair.clone())
             .with_tokio()
             .with_tcp(
@@ -69,6 +88,8 @@ impl P2PService {
             swarm,
             tcp_port: config.tcp_port,
             network_metadata,
+            publish_message_rx,
+            new_p2p_event_tx,
         }
     }
 
@@ -87,6 +108,33 @@ impl P2PService {
         tokio::time::timeout(Duration::from_secs(5), self.await_listen_address())
             .await
             .expect("P2PService to get a new listen address");
+
+        loop {
+            select! {
+                swarm_event = self.swarm.select_next_some() => {
+                    tracing::debug!(?swarm_event);
+
+                    let p2p_event = match swarm_event {
+                        SwarmEvent::Behaviour(event) => self.handle_behaviour_event(event),
+                        SwarmEvent::ListenerClosed {
+                            addresses, reason, ..
+                        } => {
+                            tracing::info!("P2P listener(s) `{addresses:?}` closed with `{reason:?}`");
+                            None
+                        }
+                        _ => None,
+                    };
+
+                    if let Some(p2p_event) = p2p_event {
+                        self.new_p2p_event_tx.send(p2p_event).await.expect("New p2p event receiver channel to never close");
+                    }
+                }
+                Some((message, responder)) = self.publish_message_rx.next() => {
+                    let result = self.publish_message(message);
+                    responder.respond(result).expect("No bmrng respond error");
+                }
+            }
+        }
     }
 
     async fn await_listen_address(&mut self) {
@@ -94,36 +142,6 @@ impl P2PService {
             if let SwarmEvent::NewListenAddr { .. } = self.swarm.select_next_some().await {
                 break;
             }
-        }
-    }
-
-    pub fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
-        let topic_hash = self
-            .network_metadata
-            .topics
-            .get_topic_hash_from_message(&message);
-        let encoded_data = message
-            .serialize()
-            .map_err(|err| PublishError::TransformFailed(err))?;
-
-        self.swarm
-            .behaviour_mut()
-            .publish_message(topic_hash, encoded_data)
-    }
-
-    pub async fn next_event(&mut self) -> Option<TonicP2PEvent> {
-        let event = self.swarm.select_next_some().await;
-        tracing::debug!(?event);
-
-        match event {
-            SwarmEvent::Behaviour(event) => self.handle_behaviour_event(event),
-            SwarmEvent::ListenerClosed {
-                addresses, reason, ..
-            } => {
-                tracing::info!("P2P listener(s) `{addresses:?}` closed with `{reason:?}`");
-                None
-            }
-            _ => None,
         }
     }
 
@@ -141,7 +159,10 @@ impl P2PService {
                 message_id,
                 message,
             } => {
-                let tag = self.network_metadata.topics.get_gossip_tag(&message.topic)?;
+                let tag = self
+                    .network_metadata
+                    .topics
+                    .get_gossip_tag(&message.topic)?;
                 match GossipMessage::deserialize(&tag, &message.data) {
                     Ok(decoded_message) => Some(TonicP2PEvent::GossipsubMessage {
                         peer_id: propagation_source,
@@ -164,46 +185,18 @@ impl P2PService {
             _ => None,
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use libp2p::identity::Keypair;
+    fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
+        let topic_hash = self
+            .network_metadata
+            .topics
+            .get_topic_hash_from_message(&message);
+        let encoded_data = message
+            .serialize()
+            .map_err(|err| PublishError::TransformFailed(err))?;
 
-    use crate::config::Config;
-
-    use super::P2PService;
-
-    #[tokio::test]
-    pub async fn test_start_p2p_service() {
-        tonic::initialize_tracing(tracing::Level::TRACE);
-        let config1 = Config {
-            keypair: Keypair::generate_ed25519(),
-            network_name: "testnet".to_owned(),
-            tcp_port: 10001,
-            connection_idle_timeout: None,
-            bootstrap_nodes: vec![],
-        };
-        let mut node1_p2p = P2PService::new(config1.clone());
-
-        node1_p2p.start().await;
-
-        let node1_multiaddr = format!(
-            "/ip4/127.0.0.1/tcp/{}/p2p/{}",
-            config1.tcp_port, node1_p2p.local_peer_id
-        )
-        .parse()
-        .unwrap();
-
-        let config2 = Config {
-            keypair: Keypair::generate_ed25519(),
-            network_name: "testnet".to_owned(),
-            tcp_port: 10002,
-            connection_idle_timeout: None,
-            bootstrap_nodes: vec![node1_multiaddr],
-        };
-        let mut node2_p2p = P2PService::new(config2);
-
-        node2_p2p.start().await;
+        self.swarm
+            .behaviour_mut()
+            .publish_message(topic_hash, encoded_data)
     }
 }

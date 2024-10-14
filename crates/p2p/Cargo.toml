@@ -7,6 +7,8 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
+bmrng = { workspace = true }
+futures = { workspace = true }
 libp2p = { version = "0.54", default-features = false, features = [
   "gossipsub",
   "identify",
