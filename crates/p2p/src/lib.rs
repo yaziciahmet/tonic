@@ -27,6 +27,8 @@ impl TryPeerId for Multiaddr {
     }
 }
 
+/// Starts the [`P2PService`] at the background to handle both incoming and outgoing requests
+/// and returns a [`P2PServiceProxy`] to interact with [`P2PService`] in a thread-safe manner.
 pub async fn start_p2p_service(config: Config) -> (P2PServiceProxy, PeerId, Multiaddr) {
     let (publish_message_tx, publish_message_rx) = bmrng::channel(16);
     let publish_message_rx = bmrng::RequestReceiverStream::new(publish_message_rx);
