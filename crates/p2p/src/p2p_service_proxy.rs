@@ -34,7 +34,7 @@ impl P2PServiceProxy {
 
     /// Initializes the tokio task which broadcast P2P events coming from [`crate::P2PService`]
     /// to corresponding subscriptions
-    pub(crate) fn run_p2p_event_handler(
+    pub(crate) fn spawn_p2p_event_handler(
         &self,
         mut new_p2p_event_rx: mpsc::Receiver<TonicP2PEvent>,
     ) {

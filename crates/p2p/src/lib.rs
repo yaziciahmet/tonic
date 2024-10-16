@@ -8,7 +8,7 @@ mod p2p_service_proxy;
 
 pub use config::Config;
 use libp2p::multiaddr::Protocol;
-use libp2p::{Multiaddr, PeerId};
+pub use libp2p::{Multiaddr, PeerId};
 pub use p2p_service::{P2PService, TonicP2PEvent};
 pub use p2p_service_proxy::P2PServiceProxy;
 use tokio::sync::{mpsc, oneshot};
@@ -40,7 +40,7 @@ pub async fn start_p2p_service(config: Config) -> (P2PServiceProxy, PeerId, Mult
 
     // Initialize p2p proxy
     let service_proxy = P2PServiceProxy::new(publish_message_tx);
-    service_proxy.run_p2p_event_handler(new_p2p_event_rx);
+    service_proxy.spawn_p2p_event_handler(new_p2p_event_rx);
 
     // Hand over the p2p service to run at background
     let (ready_tx, ready_rx) = oneshot::channel();
