@@ -11,7 +11,7 @@ use libp2p::multiaddr::Protocol;
 use libp2p::{Multiaddr, PeerId};
 pub use p2p_service::{P2PService, TonicP2PEvent};
 pub use p2p_service_proxy::P2PServiceProxy;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 pub trait TryPeerId {
     /// Tries convert `Self` into `PeerId`.
@@ -27,18 +27,29 @@ impl TryPeerId for Multiaddr {
     }
 }
 
-pub fn new_service_with_proxy(config: Config) -> (P2PService, P2PServiceProxy) {
+pub async fn start_p2p_service(config: Config) -> (P2PServiceProxy, PeerId, Multiaddr) {
     let (publish_message_tx, publish_message_rx) = bmrng::channel(16);
     let publish_message_rx = bmrng::RequestReceiverStream::new(publish_message_rx);
 
     let (new_p2p_event_tx, new_p2p_event_rx) = mpsc::channel(16);
 
-    let p2p_service = P2PService::new(config, publish_message_rx, new_p2p_event_tx);
+    // Initialize p2p service
+    let mut service = P2PService::new(config, publish_message_rx, new_p2p_event_tx);
 
-    let p2p_service_proxy = P2PServiceProxy::new(publish_message_tx);
-    p2p_service_proxy.run_p2p_event_handler(new_p2p_event_rx);
+    // Initialize p2p proxy
+    let service_proxy = P2PServiceProxy::new(publish_message_tx);
+    service_proxy.run_p2p_event_handler(new_p2p_event_rx);
 
-    (p2p_service, p2p_service_proxy)
+    // Hand over the p2p service to run at background
+    let (ready_tx, ready_rx) = oneshot::channel();
+    tokio::spawn(async move {
+        service.start(Some(ready_tx)).await;
+    });
+
+    // Wait for p2p service to be ready
+    let (peer_id, multiaddr) = ready_rx.await.unwrap();
+
+    (service_proxy, peer_id, multiaddr)
 }
 
 #[cfg(test)]
@@ -46,7 +57,6 @@ mod tests {
     use std::time::Duration;
 
     use libp2p::{identity::Keypair, Multiaddr, PeerId};
-    use tokio::sync::oneshot;
 
     use crate::{config::Config, gossipsub::GossipMessage, P2PServiceProxy};
 
@@ -61,20 +71,12 @@ mod tests {
             connection_idle_timeout: None,
             bootstrap_nodes,
         };
-        let (mut p2p, p2p_proxy) = super::new_service_with_proxy(config.clone());
-
-        let (ready_tx, ready_rx) = oneshot::channel();
-
-        tokio::spawn(async move {
-            p2p.start(Some(ready_tx)).await;
-        });
-
-        let (peer_id, multiaddr) = ready_rx.await.unwrap();
+        let result = super::start_p2p_service(config).await;
 
         // Sleep some time to ensure that p2p setup is complete
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        (p2p_proxy, peer_id, multiaddr)
+        result
     }
 
     #[tokio::test]
