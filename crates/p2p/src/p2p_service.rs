@@ -5,7 +5,7 @@ use libp2p::gossipsub::{self, MessageId, PublishError, TopicHash};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 use tokio::select;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
@@ -41,7 +41,12 @@ pub struct P2PService {
     pub local_peer_id: PeerId,
 
     swarm: Swarm<TonicBehaviour>,
+
+    /// TCP port to listen. Keep in mind if value 0 is provided
+    /// the value will be updated on start.
     tcp_port: u16,
+
+    /// Network metadata
     network_metadata: NetworkMetadata,
 
     /// Publish message request receiving channel
@@ -93,21 +98,31 @@ impl P2PService {
         }
     }
 
-    pub async fn start(&mut self) {
-        let peer_id = self.local_peer_id;
-        let multiaddr = format!("/ip4/0.0.0.0/tcp/{}", self.tcp_port)
-            .parse::<Multiaddr>()
+    pub async fn start(&mut self, ready_tx: Option<oneshot::Sender<(PeerId, Multiaddr)>>) {
+        let listen_addr = format!("/ip4/0.0.0.0/tcp/{}", self.tcp_port)
+            .parse()
             .expect("Multiaddress parsing to succeed");
 
-        tracing::info!("The p2p service starts on the `{multiaddr}` with `{peer_id}`");
-
         self.swarm
-            .listen_on(multiaddr)
+            .listen_on(listen_addr)
             .expect("Swarm to start listening");
 
-        tokio::time::timeout(Duration::from_secs(5), self.await_listen_address())
-            .await
-            .expect("P2PService to get a new listen address");
+        // Assigned address might differ from the propagated address
+        let new_listen_addr =
+            tokio::time::timeout(Duration::from_secs(5), self.await_listen_address())
+                .await
+                .expect("P2PService to get a new listen address");
+
+        tracing::info!(
+            "The p2p service started on the `{}` with `{}`",
+            new_listen_addr,
+            self.local_peer_id
+        );
+
+        if let Some(tx) = ready_tx {
+            tx.send((self.local_peer_id, new_listen_addr))
+                .expect("Ready sender channel must not fail");
+        }
 
         loop {
             select! {
@@ -139,10 +154,10 @@ impl P2PService {
         }
     }
 
-    async fn await_listen_address(&mut self) {
+    async fn await_listen_address(&mut self) -> Multiaddr {
         loop {
-            if let SwarmEvent::NewListenAddr { .. } = self.swarm.select_next_some().await {
-                break;
+            if let SwarmEvent::NewListenAddr { address, .. } = self.swarm.select_next_some().await {
+                return address;
             }
         }
     }

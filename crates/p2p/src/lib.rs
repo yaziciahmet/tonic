@@ -46,6 +46,7 @@ mod tests {
     use std::time::Duration;
 
     use libp2p::{identity::Keypair, Multiaddr, PeerId};
+    use tokio::sync::oneshot;
 
     use crate::{config::Config, gossipsub::GossipMessage, P2PServiceProxy};
 
@@ -62,30 +63,31 @@ mod tests {
         };
         let (mut p2p, p2p_proxy) = super::new_service_with_proxy(config.clone());
 
-        let peer_id = p2p.local_peer_id;
-        let multiaddr = format!("/ip4/127.0.0.1/tcp/{}/p2p/{}", config.tcp_port, peer_id,)
-            .parse()
-            .unwrap();
+        let (ready_tx, ready_rx) = oneshot::channel();
 
         tokio::spawn(async move {
-            p2p.start().await;
+            p2p.start(Some(ready_tx)).await;
         });
+
+        let (peer_id, multiaddr) = ready_rx.await.unwrap();
+
         // Sleep some time to ensure that p2p setup is complete
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
         (p2p_proxy, peer_id, multiaddr)
     }
 
     #[tokio::test]
     pub async fn test_p2p_initialize() {
-        let (_, _, addr1) = initialize_node(10001, vec![]).await;
-        initialize_node(10002, vec![addr1]).await;
+        let (_, peer_id, addr) = initialize_node(0, vec![]).await;
+        initialize_node(0, vec![addr.with_p2p(peer_id).unwrap()]).await;
     }
 
     #[tokio::test]
     pub async fn test_gossipsub() {
-        let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(10003, vec![]).await;
-        let (node2_proxy, node2_peer_id, _) = initialize_node(10004, vec![node1_addr]).await;
+        let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(0, vec![]).await;
+        let (node2_proxy, node2_peer_id, _) =
+            initialize_node(0, vec![node1_addr.with_p2p(node1_peer_id).unwrap()]).await;
 
         let mut node2_rx = node2_proxy.subscribe_dummy_messages();
 
