@@ -4,8 +4,7 @@ use futures::StreamExt;
 use libp2p::gossipsub::{self, MessageId, PublishError, TopicHash};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
-use tokio::select;
-use tokio::sync::{mpsc, oneshot};
+use tracing::{debug, info, warn};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
@@ -14,6 +13,7 @@ use crate::gossipsub::{GossipMessage, GossipTopics};
 /// Enum representing the events relevant to Tonic blockchain
 #[derive(Clone, Debug)]
 pub enum TonicP2PEvent {
+    #[allow(unused)]
     GossipsubMessage {
         peer_id: PeerId,
         message_id: MessageId,
@@ -40,6 +40,11 @@ pub struct P2PService {
     /// Local peer id
     pub local_peer_id: PeerId,
 
+    /// TCP listen address. Set after [`P2PService::start`]
+    /// method is called.
+    pub address: Option<Multiaddr>,
+
+    /// libp2p Swarm object
     swarm: Swarm<TonicBehaviour>,
 
     /// TCP port to listen. Keep in mind if value 0 is provided
@@ -48,23 +53,10 @@ pub struct P2PService {
 
     /// Network metadata
     network_metadata: NetworkMetadata,
-
-    /// Publish message request receiving channel
-    publish_message_rx:
-        bmrng::RequestReceiverStream<GossipMessage, Result<MessageId, PublishError>>,
-    /// P2P event notification channel
-    new_p2p_event_tx: mpsc::Sender<TonicP2PEvent>,
 }
 
 impl P2PService {
-    pub(crate) fn new(
-        config: Config,
-        publish_message_rx: bmrng::RequestReceiverStream<
-            GossipMessage,
-            Result<MessageId, PublishError>,
-        >,
-        new_p2p_event_tx: mpsc::Sender<TonicP2PEvent>,
-    ) -> Self {
+    pub fn new(config: Config) -> Self {
         let swarm = SwarmBuilder::with_existing_identity(config.keypair.clone())
             .with_tokio()
             .with_tcp(
@@ -74,7 +66,7 @@ impl P2PService {
             )
             .expect("Swarm TCP config to be valid")
             .with_behaviour(|_| TonicBehaviour::new(&config))
-            .expect("Swarm behaviour construction to succeed")
+            .expect("Swarm behaviour construction should succeed")
             .with_swarm_config(|cfg| {
                 if let Some(timeout) = config.connection_idle_timeout {
                     cfg.with_idle_connection_timeout(timeout)
@@ -92,66 +84,32 @@ impl P2PService {
             local_peer_id,
             swarm,
             tcp_port: config.tcp_port,
+            address: None,
             network_metadata,
-            publish_message_rx,
-            new_p2p_event_tx,
         }
     }
 
-    pub async fn start(&mut self, ready_tx: Option<oneshot::Sender<(PeerId, Multiaddr)>>) {
+    pub async fn start(&mut self) {
         let listen_addr = format!("/ip4/0.0.0.0/tcp/{}", self.tcp_port)
             .parse()
-            .expect("Multiaddress parsing to succeed");
+            .expect("Multiaddress parsing should succeed");
 
         self.swarm
             .listen_on(listen_addr)
-            .expect("Swarm to start listening");
+            .expect("Swarm should start listening");
 
         // Assigned address might differ from the propagated address
         let new_listen_addr =
             tokio::time::timeout(Duration::from_secs(5), self.await_listen_address())
                 .await
-                .expect("P2PService to get a new listen address");
+                .expect("P2PService should get a new listen address in 5 seconds");
+        self.address = Some(new_listen_addr);
 
-        tracing::info!(
-            "The p2p service started on the `{}` with `{}`",
-            new_listen_addr,
+        info!(
+            "The p2p service started on `{}` with `{}`",
+            self.address.as_ref().unwrap(),
             self.local_peer_id
         );
-
-        if let Some(tx) = ready_tx {
-            tx.send((self.local_peer_id, new_listen_addr))
-                .expect("Ready sender channel must not fail");
-        }
-
-        loop {
-            select! {
-                swarm_event = self.swarm.select_next_some() => {
-                    tracing::debug!(?swarm_event);
-
-                    let p2p_event = match swarm_event {
-                        SwarmEvent::Behaviour(event) => self.handle_behaviour_event(event),
-                        SwarmEvent::ListenerClosed {
-                            addresses, reason, ..
-                        } => {
-                            tracing::info!("P2P listener(s) `{addresses:?}` closed with `{reason:?}`");
-                            None
-                        }
-                        _ => None,
-                    };
-
-                    if let Some(p2p_event) = p2p_event {
-                        self.new_p2p_event_tx.send(p2p_event).await.expect("New p2p event receiver channel to never close");
-                    }
-                }
-                Some((message, responder)) = self.publish_message_rx.next() => {
-                    tracing::debug!(publish_message = ?message);
-
-                    let result = self.publish_message(message);
-                    responder.respond(result).expect("No bmrng respond error");
-                }
-            }
-        }
     }
 
     async fn await_listen_address(&mut self) -> Multiaddr {
@@ -162,14 +120,30 @@ impl P2PService {
         }
     }
 
-    fn handle_behaviour_event(&mut self, event: TonicBehaviourEvent) -> Option<TonicP2PEvent> {
+    pub async fn next_event(&mut self) -> Option<TonicP2PEvent> {
+        let event = self.swarm.select_next_some().await;
+        debug!(?event);
+
+        match event {
+            SwarmEvent::Behaviour(event) => self.handle_behaviour_event(event),
+            SwarmEvent::ListenerClosed {
+                addresses, reason, ..
+            } => {
+                info!("P2P listener(s) `{addresses:?}` closed with `{reason:?}`");
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_behaviour_event(&self, event: TonicBehaviourEvent) -> Option<TonicP2PEvent> {
         match event {
             TonicBehaviourEvent::Gossipsub(event) => self.handle_gossipsub_event(event),
             _ => None,
         }
     }
 
-    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) -> Option<TonicP2PEvent> {
+    fn handle_gossipsub_event(&self, event: gossipsub::Event) -> Option<TonicP2PEvent> {
         match event {
             gossipsub::Event::Message {
                 propagation_source,
@@ -188,7 +162,7 @@ impl P2PService {
                         message: decoded_message,
                     }),
                     Err(err) => {
-                        tracing::warn!(
+                        warn!(
                             ?message_id,
                             ?propagation_source,
                             ?message,
@@ -203,7 +177,7 @@ impl P2PService {
         }
     }
 
-    fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
+    pub fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
         let topic_hash = self
             .network_metadata
             .topics
