@@ -15,7 +15,7 @@ pub fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
         MessageAuthenticity::Signed(p2p_config.keypair.clone()),
         default_gossipsub_config(),
     )
-    .expect("gossipsub::Behaviour to be initialized");
+    .expect("Gossipsub behaviour should be initialized");
 
     let topics = vec![DUMMY_TOPIC];
     // Subscribe to gossip topics
@@ -23,7 +23,7 @@ pub fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
         let t = Sha256Topic::new(format!("{}/{}", topic, p2p_config.network_name));
         gossipsub
             .subscribe(&t)
-            .expect("Subscription to topic {topic} to be successful");
+            .unwrap_or_else(|_| panic!("Subscription to topic {topic} should be successful"));
     }
 
     gossipsub
@@ -36,9 +36,8 @@ fn default_gossipsub_config() -> gossipsub::Config {
 
     gossipsub::ConfigBuilder::default()
         .heartbeat_interval(Duration::from_secs(10))
-        .protocol_id_prefix("/meshsub/1.0.0")
         .validation_mode(gossipsub::ValidationMode::Strict) // enforces message signing
         .message_id_fn(message_id_fn)
         .build()
-        .expect("gossipsub::Config to be built")
+        .expect("Gossipsub config should be built")
 }

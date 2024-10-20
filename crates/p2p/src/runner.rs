@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::gossipsub::GossipMessage;
 use crate::p2p_service::{P2PService, TonicP2PEvent};
 
-const CHANNEL_SIZE: usize = 256;
+const CHANNEL_SIZE: usize = 1024;
 
 #[derive(Debug)]
 pub enum P2PRequest {
@@ -140,7 +140,6 @@ mod tests {
     use std::time::Duration;
 
     use libp2p::{identity::Keypair, Multiaddr, PeerId};
-    use tracing::Instrument;
 
     use crate::config::Config;
     use crate::gossipsub::GossipMessage;
@@ -148,7 +147,7 @@ mod tests {
 
     use super::{build_proxy, P2PRunner};
 
-    pub async fn initialize_node(
+    async fn initialize_node(
         tcp_port: u16,
         bootstrap_nodes: Vec<Multiaddr>,
     ) -> (P2PServiceProxy, PeerId, Multiaddr) {
@@ -167,26 +166,24 @@ mod tests {
         let addr = runner.multiaddr().unwrap();
 
         // Spawn the runner in the background
-        let a = addr.clone();
         tokio::spawn(async move {
-            let span = tracing::span!(tracing::Level::TRACE, "NODE", addr = a.to_string());
-            runner.run().instrument(span).await;
+            runner.run().await;
         });
 
         // Sleep some time to ensure that p2p setup is complete
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
         (proxy, key.public().to_peer_id(), addr)
     }
 
     #[tokio::test]
-    pub async fn test_p2p_initialize() {
+    async fn test_p2p_initialize() {
         let (_, peer_id, addr) = initialize_node(0, vec![]).await;
         initialize_node(0, vec![addr.with_p2p(peer_id).unwrap()]).await;
     }
 
     #[tokio::test]
-    pub async fn test_gossipsub() {
+    async fn test_gossipsub() {
         tonic::initialize_tracing(tracing::Level::TRACE);
         let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(0, vec![]).await;
         let (node2_proxy, node2_peer_id, _) =
@@ -200,7 +197,7 @@ mod tests {
             .unwrap();
 
         let IncomingDummyMessage(received_peer_id, received_value) =
-            tokio::time::timeout(Duration::from_secs(5), node2_rx.recv())
+            tokio::time::timeout(Duration::from_secs(2), node2_rx.recv())
                 .await
                 .unwrap()
                 .unwrap();
@@ -216,7 +213,7 @@ mod tests {
             .unwrap();
 
         let IncomingDummyMessage(received_peer_id, received_value) =
-            tokio::time::timeout(Duration::from_secs(5), node1_rx.recv())
+            tokio::time::timeout(Duration::from_secs(2), node1_rx.recv())
                 .await
                 .unwrap()
                 .unwrap();
