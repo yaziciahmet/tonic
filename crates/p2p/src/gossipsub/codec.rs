@@ -18,7 +18,7 @@ impl GossipCodec {
             .with_little_endian()
             .with_limit(self.max_message_size);
         match message {
-            GossipMessage::Dummy(v) => Ok(opts.serialize(v).map_err(|e| anyhow!("{:?}", e))?),
+            GossipMessage::Dummy(v) => Ok(opts.serialize(v).map_err(|e| anyhow!("{}", e))?),
         }
     }
 
@@ -29,7 +29,7 @@ impl GossipCodec {
             .with_limit(self.max_message_size);
         match tag {
             GossipTopicTag::Dummy => Ok(GossipMessage::Dummy(
-                opts.deserialize(data).map_err(|e| anyhow!("{:?}", e))?,
+                opts.deserialize(data).map_err(|e| anyhow!("{}", e))?,
             )),
         }
     }
