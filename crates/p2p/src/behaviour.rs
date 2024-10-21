@@ -37,7 +37,7 @@ impl TonicBehaviour {
         encoded_data: Vec<u8>,
     ) -> Result<MessageId, PublishError> {
         assert!(!encoded_data.is_empty(), "Received empty gossip data");
-        
+
         trace!(?topic_hash, size = ?encoded_data.len(), "Publishing gossip message");
         self.gossipsub.publish(topic_hash, encoded_data)
     }
