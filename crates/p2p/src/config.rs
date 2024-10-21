@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use libp2p::identity::Keypair;
+use libp2p::identity::{secp256k1, Keypair};
 use libp2p::Multiaddr;
 
 #[derive(Clone, Debug)]
@@ -19,4 +19,13 @@ pub struct Config {
     pub bootstrap_nodes: Vec<Multiaddr>,
     /// Connection timeout duration on idle connections
     pub connection_idle_timeout: Option<Duration>,
+}
+
+/// Takes secret key bytes generated outside of libp2p.
+/// And converts it into libp2p's `Keypair::Secp256k1`.
+pub fn convert_to_libp2p_keypair(secret_key_bytes: impl AsMut<[u8]>) -> anyhow::Result<Keypair> {
+    let secret_key = secp256k1::SecretKey::try_from_bytes(secret_key_bytes)?;
+    let keypair: secp256k1::Keypair = secret_key.into();
+
+    Ok(keypair.into())
 }

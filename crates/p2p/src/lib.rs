@@ -6,7 +6,7 @@ mod kademlia;
 pub mod p2p_proxy;
 pub mod p2p_service;
 
-pub use config::Config;
+pub use config::*;
 pub use gossipsub::GossipMessage;
 use libp2p::multiaddr::Protocol;
 use libp2p::{Multiaddr, PeerId};
