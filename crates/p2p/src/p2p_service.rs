@@ -1,25 +1,20 @@
 use std::time::Duration;
 
 use futures::StreamExt;
-use libp2p::gossipsub::{self, MessageId, PublishError, TopicHash};
+use libp2p::gossipsub::{self, MessageId, PublishError};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
-use tracing::{debug, info, warn};
+use tokio::select;
+use tokio::sync::mpsc;
+use tracing::{debug, error, info, trace, warn};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
 use crate::gossipsub::{GossipMessage, GossipTopics};
 
-/// Enum representing the events relevant to Tonic blockchain
-#[derive(Clone, Debug)]
-pub enum TonicP2PEvent {
-    #[allow(unused)]
-    GossipsubMessage {
-        peer_id: PeerId,
-        message_id: MessageId,
-        topic_hash: TopicHash,
-        message: GossipMessage,
-    },
+#[derive(Debug)]
+pub enum P2PRequest {
+    BroadcastMessage(GossipMessage),
 }
 
 struct NetworkMetadata {
@@ -36,7 +31,7 @@ impl NetworkMetadata {
 /// [`P2PService`] is the core component of the libp2p network layer.
 /// It sits in the center of both any P2P activity including handling
 /// incoming and outgoing messages and connections to peers.
-pub struct P2PService {
+pub struct P2PService<B: Broadcast> {
     /// Local peer id
     pub local_peer_id: PeerId,
 
@@ -47,6 +42,12 @@ pub struct P2PService {
     /// libp2p Swarm object
     swarm: Swarm<TonicBehaviour>,
 
+    /// Request receiver channel
+    request_receiver: mpsc::Receiver<P2PRequest>,
+
+    /// P2P event broadcaster
+    broadcast: B,
+
     /// TCP port to listen. Keep in mind if value 0 is provided
     /// the value will be updated on start.
     tcp_port: u16,
@@ -55,8 +56,11 @@ pub struct P2PService {
     network_metadata: NetworkMetadata,
 }
 
-impl P2PService {
-    pub fn new(config: Config) -> Self {
+impl<B> P2PService<B>
+where
+    B: Broadcast,
+{
+    pub fn new(config: Config, request_receiver: mpsc::Receiver<P2PRequest>, broadcast: B) -> Self {
         let swarm = SwarmBuilder::with_existing_identity(config.keypair.clone())
             .with_tokio()
             .with_tcp(
@@ -83,13 +87,15 @@ impl P2PService {
         Self {
             local_peer_id,
             swarm,
+            request_receiver,
+            broadcast,
             tcp_port: config.tcp_port,
             address: None,
             network_metadata,
         }
     }
 
-    pub async fn start(&mut self) {
+    pub async fn listen(&mut self) {
         let listen_addr = format!("/ip4/0.0.0.0/tcp/{}", self.tcp_port)
             .parse()
             .expect("Multiaddress parsing should succeed");
@@ -120,47 +126,57 @@ impl P2PService {
         }
     }
 
-    pub async fn next_event(&mut self) -> Option<TonicP2PEvent> {
-        let event = self.swarm.select_next_some().await;
-        debug!(?event);
-
-        match event {
-            SwarmEvent::Behaviour(event) => self.handle_behaviour_event(event),
-            SwarmEvent::ListenerClosed {
-                addresses, reason, ..
-            } => {
-                info!("P2P listener(s) `{addresses:?}` closed with `{reason:?}`");
-                None
+    pub async fn run(&mut self) {
+        loop {
+            select! {
+                event = self.swarm.select_next_some() => {
+                    trace!(?event);
+                    match event {
+                        SwarmEvent::Behaviour(event) => {
+                            if let Err(err) = self.handle_behaviour_event(event) {
+                                error!("Failed to handle behaviour event: {}", err);
+                            }
+                        }
+                        _ => {},
+                    }
+                }
+                request = self.request_receiver.recv() => {
+                    let request = request.expect("P2P request should not be empty");
+                    trace!(?request);
+                    match request {
+                        P2PRequest::BroadcastMessage(message) => {
+                            if let Err(err) = self.publish_message(message) {
+                                error!("Failed to broadcast gossip message: {}", err);
+                            }
+                        }
+                    }
+                }
             }
-            _ => None,
         }
     }
 
-    fn handle_behaviour_event(&self, event: TonicBehaviourEvent) -> Option<TonicP2PEvent> {
+    fn handle_behaviour_event(&self, event: TonicBehaviourEvent) -> anyhow::Result<()> {
         match event {
             TonicBehaviourEvent::Gossipsub(event) => self.handle_gossipsub_event(event),
-            _ => None,
+            _ => Ok(()),
         }
     }
 
-    fn handle_gossipsub_event(&self, event: gossipsub::Event) -> Option<TonicP2PEvent> {
+    fn handle_gossipsub_event(&self, event: gossipsub::Event) -> anyhow::Result<()> {
         match event {
             gossipsub::Event::Message {
                 propagation_source,
                 message_id,
                 message,
             } => {
-                let tag = self
-                    .network_metadata
-                    .topics
-                    .get_gossip_tag(&message.topic)?;
+                let Some(tag) = self.network_metadata.topics.get_gossip_tag(&message.topic) else {
+                    // TODO: lower peer score
+                    return Ok(());
+                };
                 match GossipMessage::deserialize(&tag, &message.data) {
-                    Ok(decoded_message) => Some(TonicP2PEvent::GossipsubMessage {
-                        peer_id: propagation_source,
-                        message_id,
-                        topic_hash: message.topic,
-                        message: decoded_message,
-                    }),
+                    Ok(decoded_message) => {
+                        self.handle_gossipsub_message(decoded_message, propagation_source)
+                    }
                     Err(err) => {
                         warn!(
                             ?message_id,
@@ -169,15 +185,27 @@ impl P2PService {
                             ?err,
                             "Failed to deserialize gossip message"
                         );
-                        None
+                        // TODO: lower peer score
+                        Ok(())
                     }
                 }
             }
-            _ => None,
+            _ => Ok(()),
         }
     }
 
-    pub fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
+    fn handle_gossipsub_message(
+        &self,
+        message: GossipMessage,
+        peer_id: PeerId,
+    ) -> anyhow::Result<()> {
+        debug!(gossip_message = ?message, ?peer_id);
+        match message {
+            GossipMessage::Dummy(value) => self.broadcast.broadcast_dummy((value, peer_id)),
+        }
+    }
+
+    fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
         let topic_hash = self
             .network_metadata
             .topics
@@ -190,4 +218,10 @@ impl P2PService {
             .behaviour_mut()
             .publish_message(topic_hash, encoded_data)
     }
+}
+
+pub type IncomingDummyMessage = (u64, PeerId);
+
+pub trait Broadcast {
+    fn broadcast_dummy(&self, data: IncomingDummyMessage) -> anyhow::Result<()>;
 }

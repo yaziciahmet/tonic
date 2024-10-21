@@ -1,16 +1,17 @@
 mod behaviour;
 pub mod config;
-pub mod gossipsub;
+mod gossipsub;
 mod identify;
 mod kademlia;
-mod p2p_service;
-pub mod runner;
+pub mod p2p_proxy;
+pub mod p2p_service;
 
 pub use config::Config;
 pub use gossipsub::GossipMessage;
 use libp2p::multiaddr::Protocol;
 use libp2p::{Multiaddr, PeerId};
-pub use runner::{build_proxy, IncomingDummyMessage, P2PServiceProxy};
+pub use p2p_proxy::*;
+pub use p2p_service::*;
 
 pub trait TryPeerId {
     /// Tries convert `Self` into `PeerId`.
