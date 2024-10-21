@@ -130,7 +130,7 @@ where
         }
     }
 
-    #[tracing::instrument(level = "trace", skip_all, fields (local_peer_id = %self.local_peer_id, address = %self.address.as_ref().unwrap()))]
+    #[tracing::instrument(level = "debug", skip_all, fields (local_peer_id = %self.local_peer_id, address = %self.address.as_ref().unwrap()))]
     pub async fn run(&mut self) {
         loop {
             select! {
