@@ -13,8 +13,9 @@ pub struct P2PServiceProxy {
 
 impl P2PServiceProxy {
     pub fn new(request_sender: mpsc::Sender<P2PRequest>) -> Self {
-        let (dummy_broadcast, _) = broadcast::channel(CHANNEL_SIZE);
+        assert!(!request_sender.is_closed(), "Received closed request sender channel");
 
+        let (dummy_broadcast, _) = broadcast::channel(CHANNEL_SIZE);
         Self {
             request_sender,
             dummy_broadcast,

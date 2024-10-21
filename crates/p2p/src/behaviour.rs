@@ -1,6 +1,7 @@
 use libp2p::gossipsub::{MessageId, PublishError, TopicHash};
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{gossipsub, identify, kad};
+use tracing::trace;
 
 use crate::config::Config;
 use crate::gossipsub::build_gossipsub_behaviour;
@@ -35,8 +36,9 @@ impl TonicBehaviour {
         topic_hash: TopicHash,
         encoded_data: Vec<u8>,
     ) -> Result<MessageId, PublishError> {
-        assert_ne!(encoded_data.len(), 0, "Gossip data can not be empty");
+        assert!(!encoded_data.is_empty(), "Received empty gossip data");
         
+        trace!(?topic_hash, size = ?encoded_data.len(), "Publishing gossip message");
         self.gossipsub.publish(topic_hash, encoded_data)
     }
 }
