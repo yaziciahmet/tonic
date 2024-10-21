@@ -1,8 +1,10 @@
+mod codec;
 mod messages;
 mod topics;
 
 use std::time::Duration;
 
+pub use codec::*;
 use libp2p::gossipsub::{self, MessageAuthenticity, MessageId, Sha256Topic};
 pub use messages::*;
 use sha2::{Digest, Sha256};

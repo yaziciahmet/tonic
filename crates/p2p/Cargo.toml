@@ -8,6 +8,7 @@ repository = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
+bincode = { workspace = true }
 futures = { workspace = true }
 libp2p = { version = "0.54", default-features = false, features = [
   "gossipsub",
@@ -21,7 +22,6 @@ libp2p = { version = "0.54", default-features = false, features = [
   "yamux",
 ] }
 serde = { workspace = true }
-serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use futures::StreamExt;
-use libp2p::gossipsub::{self, MessageId, PublishError};
+use libp2p::gossipsub::{self, MessageId};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 use tokio::select;
@@ -10,21 +10,25 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
-use crate::gossipsub::{GossipMessage, GossipTopics};
+use crate::gossipsub::{GossipCodec, GossipMessage, GossipTopics};
 
 #[derive(Debug)]
 pub enum P2PRequest {
     BroadcastMessage(GossipMessage),
 }
 
+const MAX_MESSAGE_SIZE: u64 = 1024 * 1024 * 4; // 4 MB
+
 struct NetworkMetadata {
+    codec: GossipCodec,
     topics: GossipTopics,
 }
 
 impl NetworkMetadata {
     fn new(p2p_config: &Config) -> Self {
+        let codec = GossipCodec::new(MAX_MESSAGE_SIZE);
         let topics = GossipTopics::new(&p2p_config.network_name);
-        Self { topics }
+        Self { codec, topics }
     }
 }
 
@@ -173,7 +177,7 @@ where
                     // TODO: lower peer score
                     return Ok(());
                 };
-                match GossipMessage::deserialize(&tag, &message.data) {
+                match self.network_metadata.codec.deserialize(&tag, &message.data) {
                     Ok(decoded_message) => {
                         self.handle_gossipsub_message(decoded_message, propagation_source)
                     }
@@ -205,18 +209,17 @@ where
         }
     }
 
-    fn publish_message(&mut self, message: GossipMessage) -> Result<MessageId, PublishError> {
+    fn publish_message(&mut self, message: GossipMessage) -> anyhow::Result<MessageId> {
         let topic_hash = self
             .network_metadata
             .topics
             .get_topic_hash_from_message(&message);
-        let encoded_data = message
-            .serialize()
-            .map_err(|err| PublishError::TransformFailed(err))?;
+        let encoded_data = self.network_metadata.codec.serialize(&message)?;
 
-        self.swarm
+        Ok(self
+            .swarm
             .behaviour_mut()
-            .publish_message(topic_hash, encoded_data)
+            .publish_message(topic_hash, encoded_data)?)
     }
 }
 
