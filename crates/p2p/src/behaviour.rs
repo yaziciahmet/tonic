@@ -35,6 +35,8 @@ impl TonicBehaviour {
         topic_hash: TopicHash,
         encoded_data: Vec<u8>,
     ) -> Result<MessageId, PublishError> {
+        assert_ne!(encoded_data.len(), 0, "Gossip data can not be empty");
+        
         self.gossipsub.publish(topic_hash, encoded_data)
     }
 }

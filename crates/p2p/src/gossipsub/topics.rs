@@ -11,8 +11,9 @@ pub struct GossipTopics {
 
 impl GossipTopics {
     pub fn new(network_name: &str) -> Self {
-        let dummy_topic = Sha256Topic::new(format!("{DUMMY_TOPIC}/{network_name}"));
+        assert_ne!(network_name, "", "Network name can not be empty");
 
+        let dummy_topic = Sha256Topic::new(format!("{DUMMY_TOPIC}/{network_name}"));
         Self {
             dummy_topic: (dummy_topic.hash(), dummy_topic),
         }
