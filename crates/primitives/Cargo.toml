@@ -9,6 +9,7 @@ repository = { workspace = true }
 [dependencies]
 bytemuck = { workspace = true }
 hex = { workspace = true }
+primitive-types = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 
