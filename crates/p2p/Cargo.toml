@@ -28,7 +28,3 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tonic = { workspace = true }
-
-[features]
-default = []
-test-helpers = []

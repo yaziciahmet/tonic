@@ -8,7 +8,7 @@ license = { workspace = true }
 [dependencies]
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["std", "fmt"] }
 
 [[bin]]
 name = "tonic"
