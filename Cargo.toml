@@ -20,10 +20,13 @@ tonic-p2p = { path = "crates/p2p" }
 tonic-primitives = { path = "crates/primitives" }
 
 # Common dependencies
-anyhow = { version = "1.0.90", default-features = false }
+anyhow = { version = "1", default-features = false }
 bincode = { version = "1.3", default-features = false }
+bytemuck = { version = "1.19", default-features = false }
 futures = { version = "0.3", default-features = false }
-serde = { version = "1", default-features = false }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+rand = { version = "0.8" ,default-features = false, features = ["std", "std_rng"] }
+serde = { version = "1", default-features = false, features = ["derive"] }
 sha2 = { version = "0.10", default-features = false }
 thiserror = { version = "1", default-features = false }
 tokio = { version = "1.41", default-features = false, features = ["rt-multi-thread", "sync", "macros", "time"] }
