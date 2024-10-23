@@ -2860,6 +2860,7 @@ dependencies = [
  "primitive-types",
  "rand",
  "serde",
+ "thiserror",
 ]
 
 [[package]]

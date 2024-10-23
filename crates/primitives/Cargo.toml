@@ -12,6 +12,7 @@ hex = { workspace = true }
 primitive-types = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 
 [features]
 default = []
