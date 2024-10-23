@@ -21,7 +21,7 @@ pub fn sign_message(secret: &[u8; 32], msg: &[u8; 32]) -> [u8; 65] {
 
     let mut full_sig = [0u8; 65];
     full_sig[0..64].copy_from_slice(&sig);
-    full_sig[64] = rec_id as i32 as u8;
+    full_sig[64] = rec_id as u8;
 
     full_sig
 }
