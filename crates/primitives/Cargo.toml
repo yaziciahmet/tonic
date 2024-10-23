@@ -13,7 +13,8 @@ primitive-types = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+tonic-crypto-utils = { workspace = true, features = ["keccak256", "secp256k1"] }
 
 [features]
 default = []
-test-helpers = ["dep:rand"]
+test-helpers = ["dep:rand", "tonic-crypto-utils/test-helpers"]

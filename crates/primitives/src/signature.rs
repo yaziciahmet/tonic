@@ -1,20 +1,20 @@
 #[derive(Debug)]
-pub struct Signature {
-    r: [u8; 32],
-    s: [u8; 32],
-    v: u8,
-}
+pub struct Signature([u8; 65]);
 
 impl Signature {
+    pub fn full(&self) -> &[u8; 65] {
+        &self.0
+    }
+
     pub fn r(&self) -> &[u8; 32] {
-        &self.r
+        self.0[0..32].try_into().expect("Has exactly 32 bytes")
     }
 
     pub fn s(&self) -> &[u8; 32] {
-        &self.s
+        self.0[32..64].try_into().expect("Has exactly 32 bytes")
     }
 
     pub fn v(&self) -> u8 {
-        self.v
+        self.0[64]
     }
 }

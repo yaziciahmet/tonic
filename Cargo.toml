@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "bin/tonic",
+    "crates/crypto-utils",
     "crates/p2p",
     "crates/primitives",
 ]
@@ -15,9 +16,10 @@ repository = "https://github.com/yaziciahmet/tonic"
 
 [workspace.dependencies]
 # Tonic dependencies
-tonic = { path = "bin/tonic" }
-tonic-p2p = { path = "crates/p2p" }
-tonic-primitives = { path = "crates/primitives" }
+tonic = { path = "bin/tonic", default-features = false }
+tonic-crypto-utils = { path = "crates/crypto-utils", default-features = false }
+tonic-p2p = { path = "crates/p2p", default-features = false }
+tonic-primitives = { path = "crates/primitives", default-features = false }
 
 # Common dependencies
 anyhow = { version = "1", default-features = false }
@@ -27,9 +29,11 @@ futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["std"] }
 primitive-types = { version = "0.13", default-features = false }
 rand = { version = "0.8" ,default-features = false, features = ["std", "std_rng"] }
+secp256k1 = { version = "0.30" ,default-features = false, features = ["global-context", "recovery"] }
 serde = { version = "1", default-features = false, features = ["derive"] }
 sha2 = { version = "0.10", default-features = false }
 thiserror = { version = "1", default-features = false }
+tiny-keccak = { version = "2", default-features = false }
 tokio = { version = "1.41", default-features = false, features = ["rt-multi-thread", "sync", "macros", "time"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = "0.3"
