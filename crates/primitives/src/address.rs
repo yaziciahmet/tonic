@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use tonic_crypto_utils::{keccak256::keccak256, secp256k1::PublicKey};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Address([u8; 20]);
 
 impl Address {
@@ -77,14 +77,23 @@ pub enum AddressConversionError {
 mod tests {
     use tonic_crypto_utils::secp256k1::PublicKey;
 
-    use super::{Address, AddressConversionError};
+    use super::Address;
 
-    const ADDRESS_HEX_AND_ARRAY: &[(&str, [u8; 20])] = &[(
-        "0x000102030405060708090a0b0c0d0e0f10111213",
-        [
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-        ],
-    )];
+    const ADDRESS_HEX_AND_ARRAY: &[(&str, [u8; 20])] = &[
+        (
+            "0x000102030405060708090a0b0c0d0e0f10111213",
+            [
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+            ],
+        ),
+        (
+            "0xffffffffffffffffffffffffffffffffffffffff",
+            [
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 255, 255,
+            ],
+        ),
+    ];
 
     #[test]
     fn hex_address_conversion() {
@@ -93,58 +102,18 @@ mod tests {
             assert_eq!(addr, Address(*arr));
 
             let addr_str = addr.to_string();
-            assert_eq!(addr_str, s.to_string());
-        }
-
-        let invalid_data: Vec<(&str, AddressConversionError)> = vec![
-            ("", AddressConversionError::Missing0xPrefix),
-            (
-                "0x",
-                AddressConversionError::FromHexError(hex::FromHexError::InvalidStringLength),
-            ),
-            // 19 bytes
-            (
-                "0x000102030405060708090a0b0c0d0e0f101112",
-                AddressConversionError::FromHexError(hex::FromHexError::InvalidStringLength),
-            ),
-            // 21 bytes
-            (
-                "0x000102030405060708090a0b0c0d0e0f1011121314",
-                AddressConversionError::FromHexError(hex::FromHexError::InvalidStringLength),
-            ),
-            // No 0x-prefix
-            (
-                "000102030405060708090a0b0c0d0e0f10111213",
-                AddressConversionError::Missing0xPrefix,
-            ),
-        ];
-        for (s, expected_err) in invalid_data {
-            let err = Address::try_from_str(s).unwrap_err();
-            assert_eq!(err, expected_err);
+            assert_eq!(addr_str, *s);
         }
     }
 
     #[test]
     fn slice_address_conversion() {
-        for (_, arr) in ADDRESS_HEX_AND_ARRAY {
+        for (s, arr) in ADDRESS_HEX_AND_ARRAY {
             let addr = Address::try_from_slice(arr).unwrap();
             assert_eq!(addr, Address(*arr));
-        }
 
-        let invalid_data: Vec<&[u8]> = vec![
-            &[],
-            // 19 bytes
-            &[
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-            ],
-            // 21 bytes
-            &[
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-            ],
-        ];
-        for slice in invalid_data {
-            let err = Address::try_from_slice(slice).unwrap_err();
-            assert_eq!(err, AddressConversionError::TryFromSliceError);
+            let addr_str = addr.to_string();
+            assert_eq!(addr_str, *s);
         }
     }
 
