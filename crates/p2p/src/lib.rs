@@ -61,7 +61,7 @@ mod tests {
         });
 
         // Sleep some time to ensure that p2p setup is complete
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
         (p2p_proxy, peer_id, addr)
     }

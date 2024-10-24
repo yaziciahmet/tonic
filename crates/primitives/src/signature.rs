@@ -6,15 +6,21 @@ use crate::address::Address;
 pub struct Signature([u8; 65]);
 
 impl Signature {
-    pub fn from_array(arr: [u8; 65]) -> Self {
-        Self(arr)
+    pub fn try_from_array(arr: [u8; 65]) -> Result<Self, SignatureError> {
+        Self::check_v(arr[64])?;
+        Ok(Self(arr))
     }
 
     pub fn try_from_slice(slice: &[u8]) -> Result<Self, SignatureError> {
+        if slice.len() != 65 {
+            return Err(SignatureError::TryFromSliceError);
+        }
+
+        Self::check_v(slice[64])?;
         Ok(Self(
             slice
                 .try_into()
-                .map_err(|_| SignatureError::TryFromSliceError)?,
+                .expect("65 sized slice to array can not fail"),
         ))
     }
 
@@ -26,16 +32,19 @@ impl Signature {
         let mut arr = [0u8; 65];
         hex::decode_to_slice(&s[2..], &mut arr)?;
 
+        Self::check_v(arr[64])?;
         Ok(Self(arr))
     }
 
-    pub fn from_rsv(r: &[u8; 32], s: &[u8; 32], v: u8) -> Self {
+    pub fn try_from_rsv(r: &[u8; 32], s: &[u8; 32], v: u8) -> Result<Self, SignatureError> {
+        Self::check_v(v)?;
+
         let mut full = [0u8; 65];
         full[0..32].copy_from_slice(r);
         full[32..64].copy_from_slice(s);
         full[64] = v;
 
-        Self(full)
+        Ok(Self(full))
     }
 
     pub fn to_array(&self) -> [u8; 65] {
@@ -58,7 +67,6 @@ impl Signature {
         self.0[32..64].try_into().expect("Has exactly 32 bytes")
     }
 
-    // TODO: check and handle parity
     pub fn v(&self) -> u8 {
         self.0[64]
     }
@@ -66,6 +74,16 @@ impl Signature {
     pub fn recover_signer(&self, msg: &[u8; 32]) -> Result<Address, SignatureError> {
         let public = secp256k1::recover_ecdsa(&self.0, msg)?;
         Ok(public.into())
+    }
+
+    fn check_v(v: u8) -> Result<(), SignatureError> {
+        if v <= 3 {
+            Ok(())
+        } else {
+            Err(SignatureError::Secp256k1Error(
+                secp256k1::Error::InvalidRecoveryId,
+            ))
+        }
     }
 }
 
@@ -78,7 +96,7 @@ pub enum SignatureError {
     #[error("could not convert slice to address")]
     TryFromSliceError,
     #[error("{0}")]
-    RecoverError(#[from] secp256k1::Error),
+    Secp256k1Error(#[from] secp256k1::Error),
 }
 
 #[cfg(feature = "test-helpers")]
@@ -128,7 +146,7 @@ mod tests {
             let s = &arr[32..64].try_into().unwrap();
             let v = arr[64];
 
-            let sig = Signature::from_rsv(r, s, v);
+            let sig = Signature::try_from_rsv(r, s, v).unwrap();
             assert_eq!(sig, Signature(*arr));
             assert_eq!(sig.r(), r);
             assert_eq!(sig.s(), s);
