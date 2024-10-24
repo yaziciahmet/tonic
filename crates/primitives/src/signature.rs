@@ -52,6 +52,7 @@ impl Signature {
         self.0[32..64].try_into().expect("Has exactly 32 bytes")
     }
 
+    // TODO: check and handle parity
     pub fn v(&self) -> u8 {
         self.0[64]
     }
