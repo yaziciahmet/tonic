@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
-use serde::{Deserialize, Serialize};
-use tonic_crypto_utils::{keccak256::keccak256, secp256k1::PublicKey};
+use tonic_crypto_utils::keccak256::keccak256;
+use tonic_crypto_utils::secp256k1::PublicKey;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Address([u8; 20]);
 
 impl Address {
