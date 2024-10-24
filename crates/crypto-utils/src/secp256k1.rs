@@ -1,9 +1,9 @@
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-pub use secp256k1::PublicKey;
+pub use secp256k1::{Error, PublicKey};
 use secp256k1::{Message, SecretKey, SECP256K1};
 
 /// Recovers the signer from the signature and message hash
-pub fn recover_ecdsa(sig: &[u8; 65], msg: &[u8; 32]) -> Result<PublicKey, secp256k1::Error> {
+pub fn recover_ecdsa(sig: &[u8; 65], msg: &[u8; 32]) -> Result<PublicKey, Error> {
     let sig =
         RecoverableSignature::from_compact(&sig[0..64], RecoveryId::try_from(sig[64] as i32)?)?;
 
@@ -64,7 +64,7 @@ mod tests {
         let hash = b"00000000000000000000000000000000";
         let signature = sign_message(&secret.secret_bytes(), hash);
 
-        let recovered = recover_ecdsa(&signature, hash).expect("no error in recover ecdsa");
+        let recovered = recover_ecdsa(&signature, hash).unwrap();
         assert_eq!(recovered, public);
     }
 }

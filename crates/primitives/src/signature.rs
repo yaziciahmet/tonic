@@ -1,3 +1,7 @@
+use tonic_crypto_utils::secp256k1;
+
+use crate::address::Address;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Signature([u8; 65]);
 
@@ -6,15 +10,17 @@ impl Signature {
         Self(arr)
     }
 
-    pub fn try_from_slice(slice: &[u8]) -> Result<Self, SignatureConversionError> {
-        Ok(Self(slice.try_into().map_err(|_| {
-            SignatureConversionError::TryFromSliceError
-        })?))
+    pub fn try_from_slice(slice: &[u8]) -> Result<Self, SignatureError> {
+        Ok(Self(
+            slice
+                .try_into()
+                .map_err(|_| SignatureError::TryFromSliceError)?,
+        ))
     }
 
-    pub fn try_from_str(s: &str) -> Result<Self, SignatureConversionError> {
+    pub fn try_from_str(s: &str) -> Result<Self, SignatureError> {
         if !s.starts_with("0x") {
-            return Err(SignatureConversionError::Missing0xPrefix);
+            return Err(SignatureError::Missing0xPrefix);
         }
 
         let mut arr = [0u8; 65];
@@ -56,20 +62,30 @@ impl Signature {
     pub fn v(&self) -> u8 {
         self.0[64]
     }
+
+    pub fn recover_signer(&self, msg: &[u8; 32]) -> Result<Address, SignatureError> {
+        let public = secp256k1::recover_ecdsa(&self.0, msg)?;
+        Ok(public.into())
+    }
 }
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq)]
-pub enum SignatureConversionError {
+pub enum SignatureError {
     #[error("missing 0x prefix")]
     Missing0xPrefix,
     #[error("{0}")]
     FromHexError(#[from] hex::FromHexError),
     #[error("could not convert slice to address")]
     TryFromSliceError,
+    #[error("{0}")]
+    RecoverError(#[from] secp256k1::Error),
 }
 
+#[cfg(feature = "test-helpers")]
 #[cfg(test)]
 mod tests {
+    use crate::address::Address;
+
     use super::Signature;
 
     const SIGNATURE_HEX_AND_ARRAY: &[(&str, [u8; 65])] = &[
@@ -118,5 +134,14 @@ mod tests {
             assert_eq!(sig.s(), s);
             assert_eq!(sig.v(), v);
         }
+    }
+
+    #[test]
+    fn recover_signer() {
+        let address = Address::try_from_str("0x6370eF2f4Db3611D657b90667De398a2Cc2a370C").unwrap();
+        let sig = Signature::try_from_str("0x4447f3ae22e786de332cc5ed3557ebe66ee0c901b02a5353fdcd41131c4e98814030cc7ebf27f7ec0249c6d00ca67a19f03a908519e5faa764eb8de0d7fbc33201").unwrap();
+        let hash = b"11111111111111111111111111111111";
+
+        assert_eq!(sig.recover_signer(hash).unwrap(), address);
     }
 }
