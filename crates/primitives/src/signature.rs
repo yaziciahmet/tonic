@@ -93,7 +93,7 @@ pub enum SignatureError {
     Missing0xPrefix,
     #[error("{0}")]
     FromHexError(#[from] hex::FromHexError),
-    #[error("could not convert slice to address")]
+    #[error("could not convert slice to signature")]
     TryFromSliceError,
     #[error("{0}")]
     Secp256k1Error(#[from] secp256k1::Error),
