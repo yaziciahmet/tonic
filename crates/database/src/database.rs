@@ -2,8 +2,7 @@ use std::path::Path;
 
 pub use rocksdb::Error as RocksDbError;
 use rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Options,
-    ReadOptions, SnapshotWithThreadMode, DB,
+    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Options, DB,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
