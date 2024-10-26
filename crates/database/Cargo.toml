@@ -1,0 +1,17 @@
+[package]
+name = "tonic-database"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+bincode = { workspace = true }
+rocksdb = { version = "0.22", default-features = false, features = ["lz4"] }
+serde = { workspace = true }
+tempfile = { workspace = true, optional = true }
+
+[features]
+default = []
+test-helpers = ["dep:tempfile"]

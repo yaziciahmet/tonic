@@ -67,13 +67,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_p2p_initialize() {
+    async fn p2p_initialize() {
         let (_, peer_id, addr) = initialize_node(0, vec![]).await;
         initialize_node(0, vec![addr.with_p2p(peer_id).unwrap()]).await;
     }
 
     #[tokio::test]
-    async fn test_gossipsub() {
+    async fn gossipsub_messaging() {
         let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(0, vec![]).await;
         let (node2_proxy, node2_peer_id, _) =
             initialize_node(0, vec![node1_addr.with_p2p(node1_peer_id).unwrap()]).await;
