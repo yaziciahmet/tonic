@@ -1,8 +1,9 @@
 use std::path::Path;
+use std::sync::Arc;
 
 pub use rocksdb::Error as RocksDbError;
 use rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Options, DB,
+    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Options, DB
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -13,7 +14,15 @@ use crate::schema::{Schema, SchemaName};
 /// `Database` is a wrapper around `rocksdb::DB` to provide
 /// `Schema` compatible API with auto bincode serialization.
 pub struct Database {
-    inner: DB,
+    inner: Arc<DB>,
+    snapshot: Option<rocksdb::SnapshotWithThreadMode<'static, DB>>,
+}
+
+impl Drop for Database {
+    fn drop(&mut self) {
+        // Drop snapshot before Database
+        self.snapshot = None;
+    }
 }
 
 impl Database {
@@ -66,7 +75,10 @@ impl Database {
         let inner = DB::open_cf_descriptors(&opts, path, cfs)
             .expect("Failed open RocksDB with cf descriptors");
 
-        Self { inner }
+        Self {
+            inner: Arc::new(inner),
+            snapshot: None,
+        }
     }
 
     /// Get a value from the schema by key
@@ -162,6 +174,22 @@ impl Database {
                 (key, value)
             })
         })
+    }
+
+    pub fn create_snapshot(&self) -> Self {
+        // We are transmuting snapshot to 'static lifetime.
+        // This is safe considering that snapshot is not going
+        // to be used after Database is dropped, and we ensure
+        // that snapshot is dropped before Database.
+        let snapshot = unsafe {
+            let snapshot = self.inner.snapshot();
+            core::mem::transmute(snapshot)
+        };
+
+        Self {
+            inner: self.inner.clone(),
+            snapshot: Some(snapshot),
+        }
     }
 
     /// Asserts existence of column family and returns it.
@@ -322,6 +350,11 @@ mod tests {
         for (idx, kv) in kvs {
             assert_eq!(kv, ordered_kvs_rev_sliced[idx]);
         }
+    }
+
+    #[test]
+    fn snapshot() {
+        let db = init_populated_db();
     }
 
     #[derive(Debug, Serialize, Deserialize)]
