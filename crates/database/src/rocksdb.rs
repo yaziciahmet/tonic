@@ -2,77 +2,129 @@ use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use rocksdb::Error as RocksDbError;
 use rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Options,
-    ReadOptions, SnapshotWithThreadMode, DB,
+    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType,
+    DBPinnableSlice, Options, ReadOptions, SnapshotWithThreadMode, DB,
 };
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 
+use crate::codec;
 use crate::config::Config;
+use crate::kv_store::{IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator};
 use crate::schema::{Schema, SchemaName};
 
-pub trait ViewOps {}
-pub trait MutatorOps {}
+/// Helper traits for enabling view-only access to database
+pub trait ViewAccess {}
+pub trait MutatorAccess {}
 
-pub struct Generic;
-impl ViewOps for Generic {}
-impl MutatorOps for Generic {}
+pub struct FullAccess;
+impl ViewAccess for FullAccess {}
+impl MutatorAccess for FullAccess {}
 
-pub struct ViewOnly;
-impl ViewOps for ViewOnly {}
+pub struct ViewOnlyAccess;
+impl ViewAccess for ViewOnlyAccess {}
 
-/// `RocksDB` is a wrapper around `rocksdb::DB` to provide
-/// `Schema` compatible API with auto bincode serialization.
-pub struct RocksDB<'a, V> {
+/// `RocksDB` is a wrapper around `rocksdb::DB`.
+/// Supports snapshots with view-only access.
+pub struct RocksDB<Access> {
     inner: Arc<DB>,
-    snapshot: Option<SnapshotWithThreadMode<'a, DB>>,
+    snapshot: Option<SnapshotWithThreadMode<'static, DB>>,
     read_opts: ReadOptions,
-    phantom: PhantomData<V>,
+    phantom: PhantomData<Access>,
 }
 
-impl<'a, V> RocksDB<'a, V> {
-    /// Asserts existence of column family and returns it.
-    fn cf_handle(&self, name: SchemaName) -> &ColumnFamily {
+impl<Access> Drop for RocksDB<Access> {
+    fn drop(&mut self) {
+        // Drop snapshot before RocksDB
+        self.snapshot = None;
+    }
+}
+
+impl<Access> RocksDB<Access> {
+    pub(crate) fn raw_get(
+        &self,
+        schema: SchemaName,
+        key: &[u8],
+    ) -> Result<Option<DBPinnableSlice>, rocksdb::Error> {
+        let cf = self.cf_handle(schema);
+
+        self.inner.get_pinned_cf_opt(cf, key, &self.read_opts)
+    }
+
+    pub(crate) fn raw_multi_get<'a>(
+        &self,
+        schema: SchemaName,
+        keys: impl IntoIterator<Item = &'a [u8]>,
+    ) -> Vec<Result<Option<DBPinnableSlice>, rocksdb::Error>> {
+        let cf = self.cf_handle(schema);
+
         self.inner
-            .cf_handle(name)
-            .unwrap_or_else(|| panic!("Received non-existing schema `{name}`"))
+            .batched_multi_get_cf_opt(cf, keys, true, &self.read_opts)
+    }
+
+    pub(crate) fn raw_iterator<'a>(
+        &'a self,
+        schema: SchemaName,
+        rocks_db_mode: rocksdb::IteratorMode,
+    ) -> impl Iterator<Item = Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>> + 'a {
+        let cf = self.cf_handle(schema);
+
+        self.inner
+            .iterator_cf_opt(cf, self.read_opts(), rocks_db_mode)
+    }
+
+    pub(crate) fn raw_put(
+        &mut self,
+        schema: SchemaName,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), rocksdb::Error> {
+        let cf = self.cf_handle(schema);
+
+        self.inner.put_cf(cf, key, value)
+    }
+
+    pub(crate) fn raw_delete(
+        &mut self,
+        schema: SchemaName,
+        key: &[u8],
+    ) -> Result<(), rocksdb::Error> {
+        let cf = self.cf_handle(schema);
+
+        self.inner.delete_cf(cf, key)
+    }
+
+    /// Asserts existence of column family and returns it.
+    fn cf_handle(&self, schema: SchemaName) -> &ColumnFamily {
+        self.inner
+            .cf_handle(schema)
+            .unwrap_or_else(|| panic!("Received non-existing schema `{schema}`"))
     }
 
     fn read_opts(&self) -> ReadOptions {
         Self::generate_read_opts(&self.snapshot)
     }
 
-    fn generate_read_opts(snapshot: &Option<SnapshotWithThreadMode<'a, DB>>) -> ReadOptions {
+    fn generate_read_opts(snapshot: &Option<SnapshotWithThreadMode<'static, DB>>) -> ReadOptions {
         let mut opts = ReadOptions::default();
         if let Some(snapshot) = snapshot {
             opts.set_snapshot(snapshot);
         }
         opts
     }
-
-    fn serialize<T: Serialize>(item: &T) -> Vec<u8> {
-        bincode::serialize(item).expect("DB serialization can not fail")
-    }
-
-    fn deserialize<T: DeserializeOwned>(bytes: &[u8]) -> T {
-        bincode::deserialize(bytes).expect("DB deserialization can not fail")
-    }
 }
 
-impl<'a> RocksDB<'a, Generic> {
+impl RocksDB<FullAccess> {
     #[cfg(feature = "test-helpers")]
-    pub fn open_temp(config: Config, schema_names: &[SchemaName]) -> RocksDB<'_, Generic> {
+    pub fn open_temp(config: Config, schemas: &[SchemaName]) -> RocksDB<FullAccess> {
         let path = tempfile::tempdir().unwrap();
-        RocksDB::open(path, config, schema_names)
+        RocksDB::open(path, config, schemas)
     }
 
     pub fn open(
         path: impl AsRef<Path>,
         config: Config,
-        schema_names: &[SchemaName],
-    ) -> RocksDB<'_, Generic> {
+        schemas: &[SchemaName],
+    ) -> RocksDB<FullAccess> {
         // Create main database options
         let mut opts = Options::default();
         opts.create_if_missing(true);
@@ -104,7 +156,7 @@ impl<'a> RocksDB<'a, Generic> {
         let cache = Cache::new_lru_cache(config.max_cache_size as usize);
         block_opts.set_block_cache(&cache);
 
-        let cfs = schema_names.iter().map(|name| {
+        let cfs = schemas.iter().map(|name| {
             let mut cf_opts = Options::default();
             cf_opts.set_compression_type(DBCompressionType::Lz4);
             cf_opts.set_block_based_table_factory(&block_opts);
@@ -123,9 +175,15 @@ impl<'a> RocksDB<'a, Generic> {
         }
     }
 
-    /// Create snapshot
-    pub fn create_snapshot(&'a self) -> RocksDB<'a, ViewOnly> {
-        let snapshot = Some(self.inner.snapshot());
+    /// Create db snapshot.
+    pub fn create_snapshot(&self) -> RocksDB<ViewOnlyAccess> {
+        // Transmute snapshot to be static lifetime. Snapshot is dropped
+        // safely before the RocksDB manually.
+        let snapshot = unsafe {
+            let snapshot = self.inner.snapshot();
+            std::mem::transmute(snapshot)
+        };
+        let snapshot = Some(snapshot);
 
         RocksDB {
             inner: self.inner.clone(),
@@ -136,127 +194,89 @@ impl<'a> RocksDB<'a, Generic> {
     }
 }
 
-impl<'a, V> RocksDB<'a, V>
+impl<Access> KeyValueAccessor for RocksDB<Access>
 where
-    V: ViewOps,
+    Access: ViewAccess,
 {
-    /// Get a value from the schema by key
-    pub fn get<S: Schema>(&self, key: &S::Key) -> Result<Option<S::Value>, RocksDbError> {
-        let cf = self.cf_handle(S::NAME);
-
-        let key_serialized = Self::serialize(key);
-        let value_serialized = self
-            .inner
-            .get_pinned_cf_opt(cf, key_serialized, &self.read_opts)?;
-
-        Ok(value_serialized.map(|v| Self::deserialize(v.as_ref())))
+    fn get<S: Schema>(&self, key: &S::Key) -> Result<Option<S::Value>, rocksdb::Error> {
+        let key_bytes = codec::serialize(key);
+        Ok(self
+            .raw_get(S::NAME, &key_bytes)?
+            .map(|bytes| codec::deserialize(bytes.as_ref())))
     }
 
-    /// Get multiple values from the schema by list of keys.
-    /// When using this method, ensure that keys are already sorted
-    /// to avoid unexpected behaviour.
-    pub fn multi_get<S: Schema>(
+    fn multi_get<S: Schema>(
         &self,
         keys: impl IntoIterator<Item = S::Key>,
-    ) -> Result<Vec<Option<S::Value>>, RocksDbError> {
-        let cf = self.cf_handle(S::NAME);
-
-        let keys_serialized = keys
+    ) -> Result<Vec<Option<S::Value>>, rocksdb::Error> {
+        let keys_bytes = keys
             .into_iter()
-            .map(|key| Self::serialize(&key))
+            .map(|key| codec::serialize(&key))
             .collect::<Vec<_>>();
-        let values_serialized =
-            self.inner
-                .batched_multi_get_cf_opt(cf, &keys_serialized, true, &self.read_opts);
 
-        let mut values = Vec::with_capacity(values_serialized.len());
-        for value_serialized in values_serialized {
-            let value: Option<S::Value> = value_serialized?.map(|slice| Self::deserialize(&slice));
+        let values_bytes =
+            self.raw_multi_get(S::NAME, keys_bytes.iter().map(|bytes| bytes.as_slice()));
+        let mut values = Vec::with_capacity(values_bytes.len());
+        for bytes in values_bytes {
+            let value = bytes?.map(|bytes| codec::deserialize(bytes.as_ref()));
             values.push(value);
         }
 
         Ok(values)
     }
 
-    /// Check if a key exists in the schema
-    pub fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, RocksDbError> {
-        let cf = self.cf_handle(S::NAME);
+    fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, rocksdb::Error> {
+        let key_bytes = codec::serialize(key);
+        Ok(self.raw_get(S::NAME, &key_bytes)?.is_some())
+    }
+}
 
-        let key_serialized = Self::serialize(key);
-        let value_serialized = self
-            .inner
-            .get_pinned_cf_opt(cf, key_serialized, &self.read_opts)?;
-
-        Ok(value_serialized.is_some())
+impl<Access> KeyValueMutator for RocksDB<Access>
+where
+    Access: MutatorAccess,
+{
+    fn put<S: Schema>(&mut self, key: &S::Key, value: &S::Value) -> Result<(), rocksdb::Error> {
+        let key_bytes = codec::serialize(key);
+        let value_bytes = codec::serialize(value);
+        self.raw_put(S::NAME, &key_bytes, &value_bytes)
     }
 
-    /// Returns an iterator with the provided `mode`. If `mode` is `Forward` or `Reverse`,
-    /// key iteration is inclusive.
-    pub fn iterator<S: Schema>(
-        &'a self,
-        mode: IteratorMode<S>,
-    ) -> impl Iterator<Item = Result<(S::Key, S::Value), RocksDbError>> + 'a {
-        let cf = self.cf_handle(S::NAME);
+    fn delete<S: Schema>(&mut self, key: &S::Key) -> Result<(), rocksdb::Error> {
+        let key_bytes = codec::serialize(key);
+        self.raw_delete(S::NAME, &key_bytes)
+    }
+}
 
-        // We define this here because key_serialized must
-        // must live at least as much as rocks_db_mode
-        let key_serialized;
+impl<Access> KeyValueIterator for RocksDB<Access>
+where
+    Access: ViewAccess,
+{
+    fn iterator<'a, S: Schema>(
+        &'a self,
+        mode: IteratorMode<'a, S>,
+    ) -> impl Iterator<Item = Result<(S::Key, S::Value), rocksdb::Error>> + 'a {
+        let key_bytes;
         let rocks_db_mode = match mode {
             IteratorMode::Start => rocksdb::IteratorMode::Start,
             IteratorMode::End => rocksdb::IteratorMode::End,
             IteratorMode::Forward(key) => {
-                key_serialized = Self::serialize(&key);
-                rocksdb::IteratorMode::From(&key_serialized, rocksdb::Direction::Forward)
+                key_bytes = codec::serialize(key);
+                rocksdb::IteratorMode::From(&key_bytes, rocksdb::Direction::Forward)
             }
             IteratorMode::Reverse(key) => {
-                key_serialized = Self::serialize(&key);
-                rocksdb::IteratorMode::From(&key_serialized, rocksdb::Direction::Reverse)
+                key_bytes = codec::serialize(key);
+                rocksdb::IteratorMode::From(&key_bytes, rocksdb::Direction::Reverse)
             }
         };
 
-        self.inner
-            .iterator_cf_opt(cf, self.read_opts(), rocks_db_mode)
-            .map(|result| {
-                result.map(|(key_serialized, value_serialized)| {
-                    let key: S::Key = Self::deserialize(&key_serialized);
-                    let value: S::Value = Self::deserialize(&value_serialized);
-                    (key, value)
-                })
+        self.raw_iterator(S::NAME, rocks_db_mode).map(|result| {
+            result.map(|(key_bytes, value_bytes)| {
+                let key = codec::deserialize(&key_bytes);
+                let value = codec::deserialize(&value_bytes);
+                (key, value)
             })
+        })
     }
-}
-
-impl<'a, V> RocksDB<'a, V>
-where
-    V: MutatorOps,
-{
-    /// Put a key-value pair into the schema
-    pub fn put<S: Schema>(&self, key: &S::Key, value: &S::Value) -> Result<(), RocksDbError> {
-        let cf = self.cf_handle(S::NAME);
-
-        let key_serialized = Self::serialize(key);
-        let value_serialized = Self::serialize(value);
-
-        self.inner.put_cf(cf, key_serialized, value_serialized)
-    }
-
-    /// Delete a key from the schema
-    pub fn delete<S: Schema>(&self, key: &S::Key) -> Result<(), RocksDbError> {
-        let cf = self.cf_handle(S::NAME);
-
-        let key_serialized = Self::serialize(key);
-
-        self.inner.delete_cf(cf, key_serialized)
-    }
-}
-
-/// `IteratorMode` is a `Schema` wrapped `rocksdb::IteratorMode`.
-#[derive(Debug)]
-pub enum IteratorMode<S: Schema> {
-    Start,
-    End,
-    Forward(S::Key),
-    Reverse(S::Key),
 }
 
 #[cfg(test)]
@@ -264,9 +284,10 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use crate::config::Config;
+    use crate::kv_store::{IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator};
     use crate::schema::Schema;
 
-    use super::{Generic, IteratorMode, RocksDB};
+    use super::{FullAccess, RocksDB};
 
     crate::define_schema!(
         /// A very very dummy schema
@@ -275,13 +296,13 @@ mod tests {
 
     const ORDERED_KVS: [(u64, u64); 4] = [(0, 100), (1, 200), (2, 200), (3, 300)];
 
-    fn create_populated_db() -> RocksDB<'static, Generic> {
+    fn create_populated_db() -> RocksDB<FullAccess> {
         let config = Config {
             max_open_files: 8,
             max_cache_size: 1024 * 1024,
             max_total_wal_size: 2 * 1024 * 1024,
         };
-        let db = RocksDB::open_temp(config, &[Dummy::NAME, TestBlocks::NAME]);
+        let mut db = RocksDB::open_temp(config, &[Dummy::NAME, TestBlocks::NAME]);
 
         // Populate and check values
         for (key, value) in &ORDERED_KVS {
@@ -304,7 +325,7 @@ mod tests {
 
     #[test]
     fn put_and_delete() {
-        let db = create_populated_db();
+        let mut db = create_populated_db();
 
         // Delete a key and validate deletion
         let kv0 = ORDERED_KVS[0];
@@ -368,7 +389,7 @@ mod tests {
         // Iterate starting from the 2nd index of kvs
         let ordered_kvs_sliced = &ORDERED_KVS[2..];
         let kvs = db
-            .iterator::<Dummy>(IteratorMode::Forward(ordered_kvs_sliced[0].0))
+            .iterator::<Dummy>(IteratorMode::Forward(&ordered_kvs_sliced[0].0))
             .map(|kv| kv.unwrap())
             .enumerate()
             .collect::<Vec<_>>();
@@ -381,7 +402,7 @@ mod tests {
         ordered_kvs_rev.reverse();
         let ordered_kvs_rev_sliced = &ordered_kvs_rev[1..];
         let kvs = db
-            .iterator::<Dummy>(IteratorMode::Reverse(ordered_kvs_rev_sliced[0].0))
+            .iterator::<Dummy>(IteratorMode::Reverse(&ordered_kvs_rev_sliced[0].0))
             .map(|kv| kv.unwrap())
             .enumerate()
             .collect::<Vec<_>>();
@@ -392,7 +413,7 @@ mod tests {
 
     #[test]
     fn snapshot_gets_key_after_delete() {
-        let db = create_populated_db();
+        let mut db = create_populated_db();
 
         let key = 0;
         assert!(db.exists::<Dummy>(&key).unwrap());
@@ -427,4 +448,15 @@ mod tests {
         /// Processed transactions
         (ProcessedTransactions) [u8; 32] => ()
     );
+
+    #[test]
+    fn drop_snapshot_after_dropping_database() {
+        let db = create_populated_db();
+
+        let snapshot = db.create_snapshot();
+
+        drop(db);
+
+        drop(snapshot);
+    }
 }
