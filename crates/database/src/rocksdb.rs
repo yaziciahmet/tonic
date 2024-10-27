@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,22 +13,66 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::schema::{Schema, SchemaName};
 
+pub trait ViewOps {}
+pub trait MutatorOps {}
+
+pub struct Generic;
+impl ViewOps for Generic {}
+impl MutatorOps for Generic {}
+
+pub struct ViewOnly;
+impl ViewOps for ViewOnly {}
+
 /// `RocksDB` is a wrapper around `rocksdb::DB` to provide
 /// `Schema` compatible API with auto bincode serialization.
-pub struct RocksDB<'a> {
+pub struct RocksDB<'a, V> {
     inner: Arc<DB>,
     snapshot: Option<SnapshotWithThreadMode<'a, DB>>,
     read_opts: ReadOptions,
+    phantom: PhantomData<V>,
 }
 
-impl<'a> RocksDB<'a> {
-    #[cfg(feature = "test-helpers")]
-    pub fn open_temp(config: Config, schema_names: &[SchemaName]) -> Self {
-        let path = tempfile::tempdir().unwrap();
-        Self::open(path, config, schema_names)
+impl<'a, V> RocksDB<'a, V> {
+    /// Asserts existence of column family and returns it.
+    fn cf_handle(&self, name: SchemaName) -> &ColumnFamily {
+        self.inner
+            .cf_handle(name)
+            .unwrap_or_else(|| panic!("Received non-existing schema `{name}`"))
     }
 
-    pub fn open(path: impl AsRef<Path>, config: Config, schema_names: &[SchemaName]) -> Self {
+    fn read_opts(&self) -> ReadOptions {
+        Self::generate_read_opts(&self.snapshot)
+    }
+
+    fn generate_read_opts(snapshot: &Option<SnapshotWithThreadMode<'a, DB>>) -> ReadOptions {
+        let mut opts = ReadOptions::default();
+        if let Some(snapshot) = snapshot {
+            opts.set_snapshot(snapshot);
+        }
+        opts
+    }
+
+    fn serialize<T: Serialize>(item: &T) -> Vec<u8> {
+        bincode::serialize(item).expect("DB serialization can not fail")
+    }
+
+    fn deserialize<T: DeserializeOwned>(bytes: &[u8]) -> T {
+        bincode::deserialize(bytes).expect("DB deserialization can not fail")
+    }
+}
+
+impl<'a> RocksDB<'a, Generic> {
+    #[cfg(feature = "test-helpers")]
+    pub fn open_temp(config: Config, schema_names: &[SchemaName]) -> RocksDB<'_, Generic> {
+        let path = tempfile::tempdir().unwrap();
+        RocksDB::open(path, config, schema_names)
+    }
+
+    pub fn open(
+        path: impl AsRef<Path>,
+        config: Config,
+        schema_names: &[SchemaName],
+    ) -> RocksDB<'_, Generic> {
         // Create main database options
         let mut opts = Options::default();
         opts.create_if_missing(true);
@@ -70,13 +115,32 @@ impl<'a> RocksDB<'a> {
         let inner = DB::open_cf_descriptors(&opts, path, cfs)
             .expect("Failed open RocksDB with cf descriptors");
 
-        Self {
+        RocksDB {
             inner: Arc::new(inner),
             snapshot: None,
             read_opts: Self::generate_read_opts(&None),
+            phantom: PhantomData,
         }
     }
 
+    /// Check if a key exists in the schema
+    /// Create snapshot
+    pub fn create_snapshot(&'a self) -> RocksDB<'a, ViewOnly> {
+        let snapshot = Some(self.inner.snapshot());
+
+        RocksDB {
+            inner: self.inner.clone(),
+            read_opts: Self::generate_read_opts(&snapshot),
+            snapshot,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'a, V> RocksDB<'a, V>
+where
+    V: ViewOps,
+{
     /// Get a value from the schema by key
     pub fn get<S: Schema>(&self, key: &S::Key) -> Result<Option<S::Value>, RocksDbError> {
         let cf = self.cf_handle(S::NAME);
@@ -115,26 +179,6 @@ impl<'a> RocksDB<'a> {
         Ok(values)
     }
 
-    /// Put a key-value pair into the schema
-    pub fn put<S: Schema>(&self, key: &S::Key, value: &S::Value) -> Result<(), RocksDbError> {
-        let cf = self.cf_handle(S::NAME);
-
-        let key_serialized = Self::serialize(key);
-        let value_serialized = Self::serialize(value);
-
-        self.inner.put_cf(cf, key_serialized, value_serialized)
-    }
-
-    /// Delete a key from the schema
-    pub fn delete<S: Schema>(&self, key: &S::Key) -> Result<(), RocksDbError> {
-        let cf = self.cf_handle(S::NAME);
-
-        let key_serialized = Self::serialize(key);
-
-        self.inner.delete_cf(cf, key_serialized)
-    }
-
-    /// Check if a key exists in the schema
     pub fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, RocksDbError> {
         let cf = self.cf_handle(S::NAME);
 
@@ -180,43 +224,29 @@ impl<'a> RocksDB<'a> {
                 })
             })
     }
+}
 
-    /// Create snapshot
-    pub fn create_snapshot(&'a self) -> RocksDB<'a> {
-        let snapshot = Some(self.inner.snapshot());
+impl<'a, V> RocksDB<'a, V>
+where
+    V: MutatorOps,
+{
+    /// Put a key-value pair into the schema
+    pub fn put<S: Schema>(&self, key: &S::Key, value: &S::Value) -> Result<(), RocksDbError> {
+        let cf = self.cf_handle(S::NAME);
 
-        Self {
-            inner: self.inner.clone(),
-            read_opts: Self::generate_read_opts(&snapshot),
-            snapshot,
-        }
+        let key_serialized = Self::serialize(key);
+        let value_serialized = Self::serialize(value);
+
+        self.inner.put_cf(cf, key_serialized, value_serialized)
     }
 
-    /// Asserts existence of column family and returns it.
-    fn cf_handle(&self, name: SchemaName) -> &ColumnFamily {
-        self.inner
-            .cf_handle(name)
-            .unwrap_or_else(|| panic!("Received non-existing schema `{name}`"))
-    }
+    /// Delete a key from the schema
+    pub fn delete<S: Schema>(&self, key: &S::Key) -> Result<(), RocksDbError> {
+        let cf = self.cf_handle(S::NAME);
 
-    fn read_opts(&self) -> ReadOptions {
-        Self::generate_read_opts(&self.snapshot)
-    }
+        let key_serialized = Self::serialize(key);
 
-    fn generate_read_opts(snapshot: &Option<SnapshotWithThreadMode<'a, DB>>) -> ReadOptions {
-        let mut opts = ReadOptions::default();
-        if let Some(snapshot) = snapshot {
-            opts.set_snapshot(snapshot);
-        }
-        opts
-    }
-
-    fn serialize<T: Serialize>(item: &T) -> Vec<u8> {
-        bincode::serialize(item).expect("DB serialization can not fail")
-    }
-
-    fn deserialize<T: DeserializeOwned>(bytes: &[u8]) -> T {
-        bincode::deserialize(bytes).expect("DB deserialization can not fail")
+        self.inner.delete_cf(cf, key_serialized)
     }
 }
 
@@ -236,7 +266,7 @@ mod tests {
     use crate::config::Config;
     use crate::schema::Schema;
 
-    use super::{IteratorMode, RocksDB};
+    use super::{Generic, IteratorMode, RocksDB};
 
     crate::define_schema!(
         /// A very very dummy schema
@@ -245,7 +275,7 @@ mod tests {
 
     const ORDERED_KVS: [(u64, u64); 4] = [(0, 100), (1, 200), (2, 200), (3, 300)];
 
-    fn create_populated_db() -> RocksDB<'static> {
+    fn create_populated_db() -> RocksDB<'static, Generic> {
         let config = Config {
             max_open_files: 8,
             max_cache_size: 1024 * 1024,
