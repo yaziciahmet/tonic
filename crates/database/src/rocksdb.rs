@@ -1,8 +1,10 @@
 use std::path::Path;
+use std::sync::Arc;
 
 pub use rocksdb::Error as RocksDbError;
 use rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Options, DB,
+    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, Options,
+    ReadOptions, SnapshotWithThreadMode, DB,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -12,11 +14,13 @@ use crate::schema::{Schema, SchemaName};
 
 /// `RocksDB` is a wrapper around `rocksdb::DB` to provide
 /// `Schema` compatible API with auto bincode serialization.
-pub struct RocksDB {
-    inner: DB,
+pub struct RocksDB<'a> {
+    inner: Arc<DB>,
+    snapshot: Option<SnapshotWithThreadMode<'a, DB>>,
+    read_opts: ReadOptions,
 }
 
-impl RocksDB {
+impl<'a> RocksDB<'a> {
     #[cfg(feature = "test-helpers")]
     pub fn open_temp(config: Config, schema_names: &[SchemaName]) -> Self {
         let path = tempfile::tempdir().unwrap();
@@ -66,7 +70,11 @@ impl RocksDB {
         let inner = DB::open_cf_descriptors(&opts, path, cfs)
             .expect("Failed open RocksDB with cf descriptors");
 
-        Self { inner }
+        Self {
+            inner: Arc::new(inner),
+            snapshot: None,
+            read_opts: Self::generate_read_opts(&None),
+        }
     }
 
     /// Get a value from the schema by key
@@ -74,7 +82,9 @@ impl RocksDB {
         let cf = self.cf_handle(S::NAME);
 
         let key_serialized = Self::serialize(key);
-        let value_serialized = self.inner.get_pinned_cf(cf, key_serialized)?;
+        let value_serialized = self
+            .inner
+            .get_pinned_cf_opt(cf, key_serialized, &self.read_opts)?;
 
         Ok(value_serialized.map(|v| Self::deserialize(v.as_ref())))
     }
@@ -92,7 +102,9 @@ impl RocksDB {
             .into_iter()
             .map(|key| Self::serialize(&key))
             .collect::<Vec<_>>();
-        let values_serialized = self.inner.batched_multi_get_cf(cf, &keys_serialized, true);
+        let values_serialized =
+            self.inner
+                .batched_multi_get_cf_opt(cf, &keys_serialized, true, &self.read_opts);
 
         let mut values = Vec::with_capacity(values_serialized.len());
         for value_serialized in values_serialized {
@@ -127,14 +139,16 @@ impl RocksDB {
         let cf = self.cf_handle(S::NAME);
 
         let key_serialized = Self::serialize(key);
-        let value_serialized = self.inner.get_pinned_cf(cf, key_serialized)?;
+        let value_serialized = self
+            .inner
+            .get_pinned_cf_opt(cf, key_serialized, &self.read_opts)?;
 
         Ok(value_serialized.is_some())
     }
 
     /// Returns an iterator with the provided `mode`. If `mode` is `Forward` or `Reverse`,
     /// key iteration is inclusive.
-    pub fn iterator<'a, S: Schema>(
+    pub fn iterator<S: Schema>(
         &'a self,
         mode: IteratorMode<S>,
     ) -> impl Iterator<Item = Result<(S::Key, S::Value), RocksDbError>> + 'a {
@@ -156,25 +170,45 @@ impl RocksDB {
             }
         };
 
-        self.inner.iterator_cf(cf, rocks_db_mode).map(|result| {
-            result.map(|(key_serialized, value_serialized)| {
-                let key: S::Key = Self::deserialize(&key_serialized);
-                let value: S::Value = Self::deserialize(&value_serialized);
-                (key, value)
+        self.inner
+            .iterator_cf_opt(cf, self.read_opts(), rocks_db_mode)
+            .map(|result| {
+                result.map(|(key_serialized, value_serialized)| {
+                    let key: S::Key = Self::deserialize(&key_serialized);
+                    let value: S::Value = Self::deserialize(&value_serialized);
+                    (key, value)
+                })
             })
-        })
     }
 
-    /// Create rocksdb snapshot
-    pub fn create_snapshot<'a>(&'a self) -> rocksdb::SnapshotWithThreadMode<'a, DB> {
-        self.inner.snapshot()
+    /// Create snapshot
+    pub fn create_snapshot(&'a self) -> RocksDB<'a> {
+        let snapshot = Some(self.inner.snapshot());
+
+        Self {
+            inner: self.inner.clone(),
+            read_opts: Self::generate_read_opts(&snapshot),
+            snapshot,
+        }
     }
 
     /// Asserts existence of column family and returns it.
-    fn cf_handle(&self, name: &str) -> &ColumnFamily {
+    fn cf_handle(&self, name: SchemaName) -> &ColumnFamily {
         self.inner
             .cf_handle(name)
             .unwrap_or_else(|| panic!("Received non-existing schema `{name}`"))
+    }
+
+    fn read_opts(&self) -> ReadOptions {
+        Self::generate_read_opts(&self.snapshot)
+    }
+
+    fn generate_read_opts(snapshot: &Option<SnapshotWithThreadMode<'a, DB>>) -> ReadOptions {
+        let mut opts = ReadOptions::default();
+        if let Some(snapshot) = snapshot {
+            opts.set_snapshot(snapshot);
+        }
+        opts
     }
 
     fn serialize<T: Serialize>(item: &T) -> Vec<u8> {
@@ -211,7 +245,7 @@ mod tests {
 
     const ORDERED_KVS: [(u64, u64); 4] = [(0, 100), (1, 200), (2, 200), (3, 300)];
 
-    fn create_populated_db() -> RocksDB {
+    fn create_populated_db() -> RocksDB<'static> {
         let config = Config {
             max_open_files: 8,
             max_cache_size: 1024 * 1024,
@@ -324,6 +358,23 @@ mod tests {
         for (idx, kv) in kvs {
             assert_eq!(kv, ordered_kvs_rev_sliced[idx]);
         }
+    }
+
+    #[test]
+    fn snapshot_gets_key_after_delete() {
+        let db = create_populated_db();
+
+        let key = 0;
+        assert!(db.exists::<Dummy>(&key).unwrap());
+
+        let snapshot = db.create_snapshot();
+        assert!(snapshot.exists::<Dummy>(&key).unwrap());
+
+        db.delete::<Dummy>(&key).unwrap();
+
+        // Key doesn't exist in database but exists in snapshot
+        assert!(!db.exists::<Dummy>(&key).unwrap());
+        assert!(snapshot.exists::<Dummy>(&key).unwrap());
     }
 
     #[derive(Debug, Serialize, Deserialize)]
