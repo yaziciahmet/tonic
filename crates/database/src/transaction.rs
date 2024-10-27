@@ -16,6 +16,12 @@ pub struct InMemoryTransaction<'a> {
 }
 
 impl<'a> InMemoryTransaction<'a> {
+    pub fn new(db: &'a RocksDB<FullAccess>) -> Self {
+        Self {
+            db,
+            changes: HashMap::new(),
+        }
+    }
     fn get_from_changes(&self, schema: SchemaName, key: &Vec<u8>) -> Option<&TxOperation> {
         self.changes.get(schema).and_then(|btree| btree.get(key))
     }

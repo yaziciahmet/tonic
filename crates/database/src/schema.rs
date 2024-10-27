@@ -25,3 +25,35 @@ macro_rules! define_schema {
         }
     };
 }
+
+#[cfg(feature = "test-helpers")]
+crate::define_schema!(
+    /// A very very dummy schema
+    (Dummy) u64 => u64
+);
+
+#[cfg(test)]
+mod tests {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct TestBlock {
+        height: u64,
+        hash: [u8; 32],
+        data: Vec<u8>,
+    }
+
+    // Verify that macro resolves without error
+    crate::define_schema!(
+        /// Block by height
+        (TestBlocks) u64 => TestBlock
+    );
+    crate::define_schema!(
+        /// Last block hash
+        (LastBlockHash) () => [u8; 32]
+    );
+    crate::define_schema!(
+        /// Processed transactions
+        (ProcessedTransactions) [u8; 32] => ()
+    );
+}

@@ -11,6 +11,7 @@ use crate::codec;
 use crate::config::Config;
 use crate::kv_store::{IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator};
 use crate::schema::{Schema, SchemaName};
+use crate::transaction::InMemoryTransaction;
 
 /// Helper traits for enabling view-only access to database
 pub trait ViewAccess {}
@@ -192,6 +193,10 @@ impl RocksDB<FullAccess> {
             phantom: PhantomData,
         }
     }
+
+    pub fn transaction(&self) -> InMemoryTransaction {
+        InMemoryTransaction::new(&self)
+    }
 }
 
 impl<Access> KeyValueAccessor for RocksDB<Access>
@@ -279,30 +284,27 @@ where
     }
 }
 
+#[cfg(feature = "test-helpers")]
+pub fn create_test_db() -> RocksDB<FullAccess> {
+    let config = Config {
+        max_open_files: 8,
+        max_cache_size: 1024 * 1024,
+        max_total_wal_size: 2 * 1024 * 1024,
+    };
+    RocksDB::open_temp(config, &[crate::schema::Dummy::NAME])
+}
+
 #[cfg(test)]
 mod tests {
-    use serde::{Deserialize, Serialize};
-
-    use crate::config::Config;
     use crate::kv_store::{IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator};
-    use crate::schema::Schema;
+    use crate::schema::Dummy;
 
-    use super::{FullAccess, RocksDB};
-
-    crate::define_schema!(
-        /// A very very dummy schema
-        (Dummy) u64 => u64
-    );
+    use super::{create_test_db, FullAccess, RocksDB};
 
     const ORDERED_KVS: [(u64, u64); 4] = [(0, 100), (1, 200), (2, 200), (3, 300)];
 
     fn create_populated_db() -> RocksDB<FullAccess> {
-        let config = Config {
-            max_open_files: 8,
-            max_cache_size: 1024 * 1024,
-            max_total_wal_size: 2 * 1024 * 1024,
-        };
-        let mut db = RocksDB::open_temp(config, &[Dummy::NAME, TestBlocks::NAME]);
+        let mut db = create_test_db();
 
         // Populate and check values
         for (key, value) in &ORDERED_KVS {
@@ -427,27 +429,6 @@ mod tests {
         assert!(!db.exists::<Dummy>(&key).unwrap());
         assert!(snapshot.exists::<Dummy>(&key).unwrap());
     }
-
-    #[derive(Debug, Serialize, Deserialize)]
-    pub struct TestBlock {
-        height: u64,
-        hash: [u8; 32],
-        data: Vec<u8>,
-    }
-
-    // Verify that macro resolves without error
-    crate::define_schema!(
-        /// Block by height
-        (TestBlocks) u64 => TestBlock
-    );
-    crate::define_schema!(
-        /// Last block hash
-        (LastBlockHash) () => [u8; 32]
-    );
-    crate::define_schema!(
-        /// Processed transactions
-        (ProcessedTransactions) [u8; 32] => ()
-    );
 
     #[test]
     fn drop_snapshot_after_dropping_database() {
