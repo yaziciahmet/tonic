@@ -5,13 +5,16 @@ use crate::kv_store::{KeyValueAccessor, KeyValueIterator, KeyValueMutator};
 use crate::rocksdb::{FullAccess, RocksDB};
 use crate::schema::{Schema, SchemaName};
 
-pub type Changes = HashMap<SchemaName, BTreeMap<Vec<u8>, TxOperation>>;
+pub(crate) type Changes = HashMap<SchemaName, BTreeMap<Vec<u8>, TxOperation>>;
 
+/// Struct representing a single transaction operation.
 pub enum TxOperation {
     Put(Vec<u8>),
     Delete,
 }
 
+/// `InMemoryTransaction` collects the transaction operations
+/// in memory, and on commit, batches all the changes at once.
 pub struct InMemoryTransaction<'a> {
     db: &'a RocksDB<FullAccess>,
     changes: Changes,

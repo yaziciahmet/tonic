@@ -5,12 +5,15 @@ use serde::Serialize;
 
 pub type SchemaName = &'static str;
 
+/// Schema trait wraps a simple key-value schema info
+/// for easy serialization of the key and values.
 pub trait Schema {
     const NAME: SchemaName;
     type Key: Serialize + DeserializeOwned + Debug;
     type Value: Serialize + DeserializeOwned + Debug;
 }
 
+/// Macro to easily define a key-value schema by implementing `Schema` trait.
 #[macro_export]
 macro_rules! define_schema {
     ($(#[$doc:meta])* ($name:ident) $key:ty => $value:ty) => {
