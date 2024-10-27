@@ -123,7 +123,6 @@ impl<'a> RocksDB<'a, Generic> {
         }
     }
 
-    /// Check if a key exists in the schema
     /// Create snapshot
     pub fn create_snapshot(&'a self) -> RocksDB<'a, ViewOnly> {
         let snapshot = Some(self.inner.snapshot());
@@ -179,6 +178,7 @@ where
         Ok(values)
     }
 
+    /// Check if a key exists in the schema
     pub fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, RocksDbError> {
         let cf = self.cf_handle(S::NAME);
 
