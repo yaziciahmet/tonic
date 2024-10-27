@@ -3,7 +3,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBPinnableSlice, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, DB
+    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType,
+    DBPinnableSlice, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, DB,
 };
 
 use crate::codec;
