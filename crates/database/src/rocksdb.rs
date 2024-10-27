@@ -14,8 +14,8 @@ use crate::schema::{Schema, SchemaName};
 use crate::transaction::{Changes, InMemoryTransaction, TxOperation};
 
 /// Helper traits for enabling view-only access to database
-pub trait ViewAccess {}
-pub trait MutatorAccess {}
+trait ViewAccess {}
+trait MutatorAccess {}
 
 pub struct FullAccess;
 impl ViewAccess for FullAccess {}
@@ -198,7 +198,7 @@ impl RocksDB<FullAccess> {
         InMemoryTransaction::new(&self)
     }
 
-    pub(crate) fn commit_transaction(&self, changes: Changes) -> Result<(), rocksdb::Error> {
+    pub(crate) fn commit_changes(&self, changes: Changes) -> Result<(), rocksdb::Error> {
         let mut batch = WriteBatch::default();
         for (schema, btree) in changes {
             let cf = self.cf_handle(schema);

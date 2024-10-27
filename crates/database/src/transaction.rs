@@ -30,7 +30,7 @@ impl<'a> InMemoryTransaction<'a> {
     }
 
     pub fn commit(self) -> Result<(), rocksdb::Error> {
-        self.db.commit_transaction(self.changes)
+        self.db.commit_changes(self.changes)
     }
 }
 
@@ -127,5 +127,25 @@ impl<'a> KeyValueIterator for InMemoryTransaction<'a> {
             return self.db.iterator(mode);
         }
         unimplemented!("Iterators not implemented for transactions. Find another way.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::kv_store::{KeyValueAccessor, KeyValueMutator};
+    use crate::rocksdb::create_test_db;
+    use crate::schema::Dummy;
+
+    #[test]
+    fn commit() {
+        let db = create_test_db();
+        let mut tx = db.transaction();
+
+        tx.put::<Dummy>(&1, &100).unwrap();
+        assert_eq!(tx.get::<Dummy>(&1).unwrap(), Some(100));
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), None);
+
+        tx.commit().unwrap();
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), Some(100));
     }
 }

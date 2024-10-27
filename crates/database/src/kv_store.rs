@@ -1,10 +1,11 @@
 use crate::schema::Schema;
 
+/// Database trait to implement to provide key-value access capabilities.
 pub trait KeyValueAccessor {
-    /// Get a value from the column by key
+    /// Get a value from the schema by key.
     fn get<S: Schema>(&self, key: &S::Key) -> Result<Option<S::Value>, rocksdb::Error>;
 
-    /// Get multiple values from the column by list of keys.
+    /// Get multiple values from the schema by list of keys.
     /// When using this method, ensure that keys are already sorted
     /// to avoid unexpected behaviour.
     fn multi_get<S: Schema>(
@@ -12,11 +13,11 @@ pub trait KeyValueAccessor {
         keys: impl IntoIterator<Item = S::Key>,
     ) -> Result<Vec<Option<S::Value>>, rocksdb::Error>;
 
-    /// Check if a key exists in the column
+    /// Check if a key exists in the schema
     fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, rocksdb::Error>;
 }
 
-/// Database trait to implement to have mutator access
+/// Database trait to implement to provide key-value mutation capabilities.
 pub trait KeyValueMutator {
     /// Put a key-value pair into the column
     fn put<S: Schema>(&mut self, key: &S::Key, value: &S::Value) -> Result<(), rocksdb::Error>;
@@ -25,6 +26,7 @@ pub trait KeyValueMutator {
     fn delete<S: Schema>(&mut self, key: &S::Key) -> Result<(), rocksdb::Error>;
 }
 
+/// Database trait to implement to provide key-value iteration capabilites.
 pub trait KeyValueIterator {
     fn iterator<'a, S: Schema>(
         &'a self,
