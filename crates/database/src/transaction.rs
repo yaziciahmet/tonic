@@ -5,6 +5,8 @@ use crate::kv_store::{KeyValueAccessor, KeyValueIterator, KeyValueMutator};
 use crate::rocksdb::{FullAccess, RocksDB};
 use crate::schema::{Schema, SchemaName};
 
+pub type Changes = HashMap<SchemaName, BTreeMap<Vec<u8>, TxOperation>>;
+
 pub enum TxOperation {
     Put(Vec<u8>),
     Delete,
@@ -12,7 +14,7 @@ pub enum TxOperation {
 
 pub struct InMemoryTransaction<'a> {
     db: &'a RocksDB<FullAccess>,
-    changes: HashMap<SchemaName, BTreeMap<Vec<u8>, TxOperation>>,
+    changes: Changes,
 }
 
 impl<'a> InMemoryTransaction<'a> {
@@ -22,8 +24,13 @@ impl<'a> InMemoryTransaction<'a> {
             changes: HashMap::new(),
         }
     }
+
     fn get_from_changes(&self, schema: SchemaName, key: &Vec<u8>) -> Option<&TxOperation> {
         self.changes.get(schema).and_then(|btree| btree.get(key))
+    }
+
+    pub fn commit(self) -> Result<(), rocksdb::Error> {
+        self.db.commit_transaction(self.changes)
     }
 }
 

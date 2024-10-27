@@ -3,15 +3,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType,
-    DBPinnableSlice, Options, ReadOptions, SnapshotWithThreadMode, DB,
+    BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType, DBPinnableSlice, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, DB
 };
 
 use crate::codec;
 use crate::config::Config;
 use crate::kv_store::{IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator};
 use crate::schema::{Schema, SchemaName};
-use crate::transaction::InMemoryTransaction;
+use crate::transaction::{Changes, InMemoryTransaction, TxOperation};
 
 /// Helper traits for enabling view-only access to database
 pub trait ViewAccess {}
@@ -196,6 +195,21 @@ impl RocksDB<FullAccess> {
 
     pub fn transaction(&self) -> InMemoryTransaction {
         InMemoryTransaction::new(&self)
+    }
+
+    pub(crate) fn commit_transaction(&self, changes: Changes) -> Result<(), rocksdb::Error> {
+        let mut batch = WriteBatch::default();
+        for (schema, btree) in changes {
+            let cf = self.cf_handle(schema);
+            for (key, operation) in btree {
+                match operation {
+                    TxOperation::Put(value) => batch.put_cf(cf, key, value),
+                    TxOperation::Delete => batch.delete_cf(cf, key),
+                }
+            }
+        }
+
+        self.inner.write(batch)
     }
 }
 
