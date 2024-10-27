@@ -122,6 +122,7 @@ impl RocksDB {
         self.inner.delete_cf(cf, key_serialized)
     }
 
+    /// Check if a key exists in the schema
     pub fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, RocksDbError> {
         let cf = self.cf_handle(S::NAME);
 
@@ -164,6 +165,7 @@ impl RocksDB {
         })
     }
 
+    /// Create rocksdb snapshot
     pub fn create_snapshot<'a>(&'a self) -> rocksdb::SnapshotWithThreadMode<'a, DB> {
         self.inner.snapshot()
     }
