@@ -10,13 +10,13 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::schema::{Schema, SchemaName};
 
-/// `Database` is a wrapper around `rocksdb::DB` to provide
+/// `RocksDB` is a wrapper around `rocksdb::DB` to provide
 /// `Schema` compatible API with auto bincode serialization.
-pub struct Database {
+pub struct RocksDB {
     inner: DB,
 }
 
-impl Database {
+impl RocksDB {
     #[cfg(feature = "test-helpers")]
     pub fn open_temp(config: Config, schema_names: &[SchemaName]) -> Self {
         let path = tempfile::tempdir().unwrap();
@@ -200,7 +200,7 @@ mod tests {
     use crate::config::Config;
     use crate::schema::Schema;
 
-    use super::{Database, IteratorMode};
+    use super::{IteratorMode, RocksDB};
 
     crate::define_schema!(
         /// A very very dummy schema
@@ -209,13 +209,13 @@ mod tests {
 
     const ORDERED_KVS: [(u64, u64); 4] = [(0, 100), (1, 200), (2, 200), (3, 300)];
 
-    fn init_populated_db() -> Database {
+    fn create_populated_db() -> RocksDB {
         let config = Config {
             max_open_files: 8,
             max_cache_size: 1024 * 1024,
             max_total_wal_size: 2 * 1024 * 1024,
         };
-        let db = Database::open_temp(config, &[Dummy::NAME, TestBlocks::NAME]);
+        let db = RocksDB::open_temp(config, &[Dummy::NAME, TestBlocks::NAME]);
 
         // Populate and check values
         for (key, value) in &ORDERED_KVS {
@@ -228,25 +228,17 @@ mod tests {
             assert_eq!(db.get::<Dummy>(key).unwrap(), Some(*value));
         }
 
-        // Validate entry count
-        let count = db.iterator::<Dummy>(IteratorMode::Start).count();
-        assert_eq!(count, ORDERED_KVS.len());
-
-        let (ordered_keys, ordered_values): (Vec<_>, Vec<_>) =
-            ORDERED_KVS.into_iter().map(|(k, v)| (k, Some(v))).unzip();
-        assert_eq!(db.multi_get::<Dummy>(ordered_keys).unwrap(), ordered_values);
-
         db
     }
 
     #[test]
-    fn simple() {
-        init_populated_db();
+    fn put_and_get() {
+        create_populated_db();
     }
 
     #[test]
-    fn delete() {
-        let db = init_populated_db();
+    fn put_and_delete() {
+        let db = create_populated_db();
 
         // Delete a key and validate deletion
         let kv0 = ORDERED_KVS[0];
@@ -260,8 +252,8 @@ mod tests {
     }
 
     #[test]
-    fn multi_get() {
-        let db = init_populated_db();
+    fn put_and_multi_get() {
+        let db = create_populated_db();
 
         // Get all keys
         let (ordered_keys, ordered_values): (Vec<_>, Vec<_>) =
@@ -278,7 +270,11 @@ mod tests {
 
     #[test]
     fn iterator() {
-        let db = init_populated_db();
+        let db = create_populated_db();
+
+        // Validate entry count
+        let count = db.iterator::<Dummy>(IteratorMode::Start).count();
+        assert_eq!(count, ORDERED_KVS.len());
 
         let ordered_kvs = ORDERED_KVS.clone();
         // Validate each key-value entry in ascending order
