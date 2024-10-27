@@ -137,7 +137,7 @@ mod tests {
     use crate::schema::Dummy;
 
     #[test]
-    fn commit() {
+    fn put() {
         let db = create_test_db();
         let mut tx = db.transaction();
 
@@ -147,5 +147,51 @@ mod tests {
 
         tx.commit().unwrap();
         assert_eq!(db.get::<Dummy>(&1).unwrap(), Some(100));
+    }
+
+    #[test]
+    fn put_and_delete() {
+        let db = create_test_db();
+        let mut tx = db.transaction();
+
+        tx.put::<Dummy>(&1, &100).unwrap();
+
+        tx.delete::<Dummy>(&1).unwrap();
+        assert_eq!(tx.get::<Dummy>(&1).unwrap(), None);
+
+        tx.commit().unwrap();
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), None);
+    }
+
+    #[test]
+    fn get_prev_data() {
+        let mut db = create_test_db();
+        db.put::<Dummy>(&1, &100).unwrap();
+
+        let tx = db.transaction();
+        assert_eq!(tx.get::<Dummy>(&1).unwrap(), Some(100));
+    }
+
+    #[test]
+    fn put_and_multi_get() {
+        let mut db = create_test_db();
+        db.put::<Dummy>(&1, &100).unwrap();
+
+        let mut tx = db.transaction();
+
+        tx.put::<Dummy>(&2, &200).unwrap();
+        tx.put::<Dummy>(&3, &300).unwrap();
+        tx.put::<Dummy>(&4, &400).unwrap();
+
+        assert_eq!(
+            tx.multi_get::<Dummy>(vec![1, 2, 4, 5]).unwrap(),
+            vec![Some(100), Some(200), Some(400), None]
+        );
+
+        tx.commit().unwrap();
+        assert_eq!(
+            db.multi_get::<Dummy>(vec![1, 2, 4, 5]).unwrap(),
+            vec![Some(100), Some(200), Some(400), None]
+        );
     }
 }
