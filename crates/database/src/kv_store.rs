@@ -19,6 +19,14 @@ pub trait KeyValueAccessor {
     fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, rocksdb::Error>;
 }
 
+/// Struct representing a single write operation.
+pub enum WriteOperation {
+    Put(Vec<u8>),
+    Delete,
+}
+
+pub type Changes = HashMap<SchemaName, BTreeMap<Vec<u8>, WriteOperation>>;
+
 /// Database trait to implement to provide key-value mutation capabilities.
 pub trait KeyValueMutator {
     /// Put a key-value pair into the column
@@ -26,6 +34,9 @@ pub trait KeyValueMutator {
 
     /// Delete a key from the column
     fn delete<S: Schema>(&mut self, key: &S::Key) -> Result<(), rocksdb::Error>;
+
+    /// Write batch operations to underlying database
+    fn write_batch(&mut self, changes: Changes) -> Result<(), rocksdb::Error>;
 }
 
 /// `IteratorMode` is a `column` wrapped `rocksdb::IteratorMode`.
@@ -49,11 +60,3 @@ pub trait KeyValueIterator {
 pub trait Commitable {
     fn commit(self) -> Result<(), rocksdb::Error>;
 }
-
-/// Struct representing a single write operation.
-pub enum WriteOperation {
-    Put(Vec<u8>),
-    Delete,
-}
-
-pub type Changes = HashMap<SchemaName, BTreeMap<Vec<u8>, WriteOperation>>;

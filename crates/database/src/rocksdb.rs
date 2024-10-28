@@ -96,6 +96,21 @@ impl<Access> RocksDB<Access> {
         self.inner.delete_cf(cf, key)
     }
 
+    pub(crate) fn raw_write_batch(&self, changes: Changes) -> Result<(), rocksdb::Error> {
+        let mut batch = WriteBatch::default();
+        for (schema, btree) in changes {
+            let cf = self.cf_handle(schema);
+            for (key, operation) in btree {
+                match operation {
+                    WriteOperation::Put(value) => batch.put_cf(cf, key, value),
+                    WriteOperation::Delete => batch.delete_cf(cf, key),
+                }
+            }
+        }
+
+        self.inner.write(batch)
+    }
+
     /// Asserts existence of column family and returns it.
     fn cf_handle(&self, schema: SchemaName) -> &ColumnFamily {
         self.inner
@@ -199,21 +214,6 @@ impl RocksDB<FullAccess> {
     pub fn transaction(&self) -> InMemoryTransaction {
         InMemoryTransaction::new(&self)
     }
-
-    pub(crate) fn commit_changes(&self, changes: Changes) -> Result<(), rocksdb::Error> {
-        let mut batch = WriteBatch::default();
-        for (schema, btree) in changes {
-            let cf = self.cf_handle(schema);
-            for (key, operation) in btree {
-                match operation {
-                    WriteOperation::Put(value) => batch.put_cf(cf, key, value),
-                    WriteOperation::Delete => batch.delete_cf(cf, key),
-                }
-            }
-        }
-
-        self.inner.write(batch)
-    }
 }
 
 impl<Access> KeyValueAccessor for RocksDB<Access>
@@ -266,6 +266,10 @@ where
     fn delete<S: Schema>(&mut self, key: &S::Key) -> Result<(), rocksdb::Error> {
         let key_bytes = codec::serialize(key);
         self.raw_delete(S::NAME, &key_bytes)
+    }
+
+    fn write_batch(&mut self, changes: Changes) -> Result<(), rocksdb::Error> {
+        self.raw_write_batch(changes)
     }
 }
 

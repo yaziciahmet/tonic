@@ -1,4 +1,4 @@
-mod codec;
+pub mod codec;
 mod config;
 pub mod kv_store;
 pub mod rocksdb;

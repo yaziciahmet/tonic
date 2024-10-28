@@ -108,6 +108,16 @@ impl<'a> KeyValueMutator for InMemoryTransaction<'a> {
             .insert(key_bytes, WriteOperation::Delete);
         Ok(())
     }
+
+    fn write_batch(&mut self, changes: Changes) -> Result<(), rocksdb::Error> {
+        for (schema, btree_updates) in changes {
+            let btree = self.changes.entry(schema).or_default();
+            for (new_key, new_operation) in btree_updates {
+                btree.insert(new_key, new_operation);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<'a> KeyValueIterator for InMemoryTransaction<'a> {
@@ -125,7 +135,7 @@ impl<'a> KeyValueIterator for InMemoryTransaction<'a> {
 
 impl<'a> Commitable for InMemoryTransaction<'a> {
     fn commit(self) -> Result<(), rocksdb::Error> {
-        self.db.commit_changes(self.changes)
+        self.db.raw_write_batch(self.changes)
     }
 }
 
