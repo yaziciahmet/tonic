@@ -9,9 +9,11 @@ use rocksdb::{
 
 use crate::codec;
 use crate::config::Config;
-use crate::kv_store::{IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator};
+use crate::kv_store::{
+    Changes, IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, WriteOperation,
+};
 use crate::schema::{Schema, SchemaName};
-use crate::transaction::{Changes, InMemoryTransaction, TxOperation};
+use crate::transaction::InMemoryTransaction;
 
 /// Helper traits for enabling view-only access to database
 trait ViewAccess {}
@@ -204,8 +206,8 @@ impl RocksDB<FullAccess> {
             let cf = self.cf_handle(schema);
             for (key, operation) in btree {
                 match operation {
-                    TxOperation::Put(value) => batch.put_cf(cf, key, value),
-                    TxOperation::Delete => batch.delete_cf(cf, key),
+                    WriteOperation::Put(value) => batch.put_cf(cf, key, value),
+                    WriteOperation::Delete => batch.delete_cf(cf, key),
                 }
             }
         }

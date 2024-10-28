@@ -1,17 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use crate::codec;
-use crate::kv_store::{KeyValueAccessor, KeyValueIterator, KeyValueMutator};
+use crate::kv_store::{
+    Changes, Commitable, KeyValueAccessor, KeyValueIterator, KeyValueMutator, WriteOperation,
+};
 use crate::rocksdb::{FullAccess, RocksDB};
 use crate::schema::{Schema, SchemaName};
-
-pub(crate) type Changes = HashMap<SchemaName, BTreeMap<Vec<u8>, TxOperation>>;
-
-/// Struct representing a single transaction operation.
-pub enum TxOperation {
-    Put(Vec<u8>),
-    Delete,
-}
 
 /// `InMemoryTransaction` collects the transaction operations
 /// in memory, and on commit, batches all the changes at once.
@@ -28,12 +22,8 @@ impl<'a> InMemoryTransaction<'a> {
         }
     }
 
-    fn get_from_changes(&self, schema: SchemaName, key: &Vec<u8>) -> Option<&TxOperation> {
+    fn get_from_changes(&self, schema: SchemaName, key: &Vec<u8>) -> Option<&WriteOperation> {
         self.changes.get(schema).and_then(|btree| btree.get(key))
-    }
-
-    pub fn commit(self) -> Result<(), rocksdb::Error> {
-        self.db.commit_changes(self.changes)
     }
 }
 
@@ -42,8 +32,8 @@ impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
         let key_bytes = codec::serialize(key);
         if let Some(operation) = self.get_from_changes(S::NAME, &key_bytes) {
             match operation {
-                TxOperation::Put(value_bytes) => Ok(Some(codec::deserialize(value_bytes))),
-                TxOperation::Delete => Ok(None),
+                WriteOperation::Put(value_bytes) => Ok(Some(codec::deserialize(value_bytes))),
+                WriteOperation::Delete => Ok(None),
             }
         } else {
             Ok(self
@@ -64,10 +54,10 @@ impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
 
                 let value: Option<S::Value> = if let Some(operation) = btree.get(&key_bytes) {
                     match operation {
-                        TxOperation::Put(value_bytes) => {
+                        WriteOperation::Put(value_bytes) => {
                             Some(codec::deserialize(value_bytes.as_slice()))
                         }
-                        TxOperation::Delete => None,
+                        WriteOperation::Delete => None,
                     }
                 } else {
                     self.db
@@ -88,8 +78,8 @@ impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
         let key_bytes = codec::serialize(key);
         if let Some(operation) = self.get_from_changes(S::NAME, &key_bytes) {
             match operation {
-                TxOperation::Put(_) => Ok(true),
-                TxOperation::Delete => Ok(false),
+                WriteOperation::Put(_) => Ok(true),
+                WriteOperation::Delete => Ok(false),
             }
         } else {
             Ok(self.db.raw_get(S::NAME, &key_bytes)?.is_some())
@@ -105,7 +95,7 @@ impl<'a> KeyValueMutator for InMemoryTransaction<'a> {
         self.changes
             .entry(S::NAME)
             .or_default()
-            .insert(key_bytes, TxOperation::Put(value_bytes));
+            .insert(key_bytes, WriteOperation::Put(value_bytes));
         Ok(())
     }
 
@@ -115,7 +105,7 @@ impl<'a> KeyValueMutator for InMemoryTransaction<'a> {
         self.changes
             .entry(S::NAME)
             .or_default()
-            .insert(key_bytes, TxOperation::Delete);
+            .insert(key_bytes, WriteOperation::Delete);
         Ok(())
     }
 }
@@ -133,9 +123,15 @@ impl<'a> KeyValueIterator for InMemoryTransaction<'a> {
     }
 }
 
+impl<'a> Commitable for InMemoryTransaction<'a> {
+    fn commit(self) -> Result<(), rocksdb::Error> {
+        self.db.commit_changes(self.changes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::kv_store::{KeyValueAccessor, KeyValueMutator};
+    use crate::kv_store::{Commitable, KeyValueAccessor, KeyValueMutator};
     use crate::rocksdb::create_test_db;
     use crate::schema::Dummy;
 

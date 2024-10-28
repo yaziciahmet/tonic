@@ -1,4 +1,6 @@
-use crate::schema::Schema;
+use std::collections::{BTreeMap, HashMap};
+
+use crate::schema::{Schema, SchemaName};
 
 /// Database trait to implement to provide key-value access capabilities.
 pub trait KeyValueAccessor {
@@ -26,14 +28,6 @@ pub trait KeyValueMutator {
     fn delete<S: Schema>(&mut self, key: &S::Key) -> Result<(), rocksdb::Error>;
 }
 
-/// Database trait to implement to provide key-value iteration capabilites.
-pub trait KeyValueIterator {
-    fn iterator<'a, S: Schema>(
-        &'a self,
-        mode: IteratorMode<'a, S>,
-    ) -> impl Iterator<Item = Result<(S::Key, S::Value), rocksdb::Error>> + 'a;
-}
-
 /// `IteratorMode` is a `column` wrapped `rocksdb::IteratorMode`.
 #[derive(Debug)]
 pub enum IteratorMode<'b, S: Schema> {
@@ -42,3 +36,24 @@ pub enum IteratorMode<'b, S: Schema> {
     Forward(&'b S::Key),
     Reverse(&'b S::Key),
 }
+
+/// Database trait to implement to provide key-value iteration capabilites.
+pub trait KeyValueIterator {
+    fn iterator<'a, S: Schema>(
+        &'a self,
+        mode: IteratorMode<'a, S>,
+    ) -> impl Iterator<Item = Result<(S::Key, S::Value), rocksdb::Error>> + 'a;
+}
+
+/// Database trait to implement committing the unsaved changes.
+pub trait Commitable {
+    fn commit(self) -> Result<(), rocksdb::Error>;
+}
+
+/// Struct representing a single write operation.
+pub enum WriteOperation {
+    Put(Vec<u8>),
+    Delete,
+}
+
+pub type Changes = HashMap<SchemaName, BTreeMap<Vec<u8>, WriteOperation>>;
