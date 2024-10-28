@@ -141,7 +141,7 @@ impl<'a> Commitable for InMemoryTransaction<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kv_store::{Commitable, KeyValueAccessor, KeyValueMutator};
+    use crate::kv_store::{Commitable, KeyValueAccessor, KeyValueMutator, Transactional};
     use crate::rocksdb::create_test_db;
     use crate::schema::Dummy;
 

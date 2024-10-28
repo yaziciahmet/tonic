@@ -10,7 +10,8 @@ use rocksdb::{
 use crate::codec;
 use crate::config::Config;
 use crate::kv_store::{
-    Changes, IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, WriteOperation,
+    Changes, IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Transactional,
+    WriteOperation,
 };
 use crate::schema::{Schema, SchemaName};
 use crate::transaction::InMemoryTransaction;
@@ -210,10 +211,6 @@ impl RocksDB<FullAccess> {
             phantom: PhantomData,
         }
     }
-
-    pub fn transaction(&self) -> InMemoryTransaction {
-        InMemoryTransaction::new(&self)
-    }
 }
 
 impl<Access> KeyValueAccessor for RocksDB<Access>
@@ -302,6 +299,14 @@ where
                 (key, value)
             })
         })
+    }
+}
+
+impl<'a> Transactional<'a> for RocksDB<FullAccess> {
+    type Transaction = InMemoryTransaction<'a>;
+
+    fn transaction(&'a self) -> Self::Transaction {
+        InMemoryTransaction::new(&self)
     }
 }
 

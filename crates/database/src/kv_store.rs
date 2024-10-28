@@ -60,3 +60,9 @@ pub trait KeyValueIterator {
 pub trait Commitable {
     fn commit(self) -> Result<(), rocksdb::Error>;
 }
+
+pub trait Transactional<'a> {
+    type Transaction: KeyValueAccessor + KeyValueMutator + KeyValueIterator + Commitable + 'a;
+
+    fn transaction(&'a self) -> Self::Transaction;
+}
