@@ -22,6 +22,10 @@ impl<'a> InMemoryTransaction<'a> {
         }
     }
 
+    pub fn into_changes(self) -> Changes {
+        self.changes
+    }
+
     fn get_from_changes(&self, schema: SchemaName, key: &Vec<u8>) -> Option<&WriteOperation> {
         self.changes.get(schema).and_then(|btree| btree.get(key))
     }
