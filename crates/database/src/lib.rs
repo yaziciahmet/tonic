@@ -1,5 +1,5 @@
 pub mod codec;
-mod config;
+pub mod config;
 pub mod kv_store;
 pub mod rocksdb;
 pub mod schema;
