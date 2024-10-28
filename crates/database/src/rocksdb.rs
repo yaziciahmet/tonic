@@ -325,10 +325,14 @@ pub fn create_test_db() -> RocksDB<FullAccess> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, HashMap};
+
+    use crate::codec;
     use crate::kv_store::{
         IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Snapshottable,
+        WriteOperation,
     };
-    use crate::schema::Dummy;
+    use crate::schema::{Dummy, Schema};
 
     use super::{create_test_db, FullAccess, RocksDB};
 
@@ -442,6 +446,46 @@ mod tests {
         for (idx, kv) in kvs {
             assert_eq!(kv, ordered_kvs_rev_sliced[idx]);
         }
+    }
+
+    #[test]
+    fn write_batch() {
+        let mut db = create_test_db();
+
+        let mut changes = HashMap::new();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+
+        // Insert 2 key-value pairs
+        let (key_1, value_1) = (1, 100);
+        let (key_2, value_2) = (2, 200);
+        btree.insert(
+            codec::serialize(&key_1),
+            WriteOperation::Put(codec::serialize(&value_1)),
+        );
+        btree.insert(
+            codec::serialize(&key_2),
+            WriteOperation::Put(codec::serialize(&value_2)),
+        );
+
+        db.write_batch(changes).unwrap();
+        assert_eq!(db.get::<Dummy>(&key_1).unwrap(), Some(value_1));
+        assert_eq!(db.get::<Dummy>(&key_2).unwrap(), Some(value_2));
+
+        let mut changes = HashMap::new();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+
+        // Delete one of the previous keys, and add another key-value pair
+        let (key_3, value_3) = (3, 300);
+        btree.insert(
+            codec::serialize(&key_3),
+            WriteOperation::Put(codec::serialize(&value_3)),
+        );
+        btree.insert(codec::serialize(&key_2), WriteOperation::Delete);
+
+        db.write_batch(changes).unwrap();
+        assert_eq!(db.get::<Dummy>(&key_1).unwrap(), Some(value_1));
+        assert_eq!(db.get::<Dummy>(&key_2).unwrap(), None);
+        assert_eq!(db.get::<Dummy>(&key_3).unwrap(), Some(value_3));
     }
 
     #[test]

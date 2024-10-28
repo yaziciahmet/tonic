@@ -20,6 +20,7 @@ pub trait KeyValueAccessor {
 }
 
 /// Struct representing a single write operation.
+#[derive(Debug)]
 pub enum WriteOperation {
     Put(Vec<u8>),
     Delete,

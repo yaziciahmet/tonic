@@ -141,9 +141,14 @@ impl<'a> Commitable for InMemoryTransaction<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kv_store::{Commitable, KeyValueAccessor, KeyValueMutator, Transactional};
+    use std::collections::{BTreeMap, HashMap};
+
+    use crate::codec;
+    use crate::kv_store::{
+        Commitable, KeyValueAccessor, KeyValueMutator, Transactional, WriteOperation,
+    };
     use crate::rocksdb::create_test_db;
-    use crate::schema::Dummy;
+    use crate::schema::{Dummy, Schema};
 
     #[test]
     fn put() {
@@ -202,5 +207,52 @@ mod tests {
             db.multi_get::<Dummy>(vec![1, 2, 4, 5]).unwrap(),
             vec![Some(100), Some(200), Some(400), None]
         );
+    }
+
+    #[test]
+    fn write_batch() {
+        let db = create_test_db();
+        let mut tx = db.transaction();
+
+        let mut changes = HashMap::new();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+
+        // Insert 2 key-value pairs
+        let (key_1, value_1) = (1, 100);
+        let (key_2, value_2) = (2, 200);
+        btree.insert(
+            codec::serialize(&key_1),
+            WriteOperation::Put(codec::serialize(&value_1)),
+        );
+        btree.insert(
+            codec::serialize(&key_2),
+            WriteOperation::Put(codec::serialize(&value_2)),
+        );
+
+        tx.write_batch(changes).unwrap();
+        assert_eq!(tx.get::<Dummy>(&key_1).unwrap(), Some(value_1));
+        assert_eq!(tx.get::<Dummy>(&key_2).unwrap(), Some(value_2));
+
+        let mut changes = HashMap::new();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+
+        // Delete one of the previous keys, and add another key-value pair
+        let (key_3, value_3) = (3, 300);
+        btree.insert(
+            codec::serialize(&key_3),
+            WriteOperation::Put(codec::serialize(&value_3)),
+        );
+        btree.insert(codec::serialize(&key_2), WriteOperation::Delete);
+
+        tx.write_batch(changes).unwrap();
+        assert_eq!(tx.get::<Dummy>(&key_1).unwrap(), Some(value_1));
+        assert_eq!(tx.get::<Dummy>(&key_2).unwrap(), None);
+        assert_eq!(tx.get::<Dummy>(&key_3).unwrap(), Some(value_3));
+
+        // Commit and verify committed key-values
+        tx.commit().unwrap();
+        assert_eq!(db.get::<Dummy>(&key_1).unwrap(), Some(value_1));
+        assert_eq!(db.get::<Dummy>(&key_2).unwrap(), None);
+        assert_eq!(db.get::<Dummy>(&key_3).unwrap(), Some(value_3));
     }
 }
