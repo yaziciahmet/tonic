@@ -10,8 +10,8 @@ use rocksdb::{
 use crate::codec;
 use crate::config::Config;
 use crate::kv_store::{
-    Changes, IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Transactional,
-    WriteOperation,
+    Changes, IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Snapshottable,
+    Transactional, WriteOperation,
 };
 use crate::schema::{Schema, SchemaName};
 use crate::transaction::InMemoryTransaction;
@@ -193,24 +193,6 @@ impl RocksDB<FullAccess> {
             phantom: PhantomData,
         }
     }
-
-    /// Create db snapshot.
-    pub fn create_snapshot(&self) -> RocksDB<ViewOnlyAccess> {
-        // Transmute snapshot to be static lifetime. Snapshot is dropped
-        // safely before the RocksDB manually.
-        let snapshot = unsafe {
-            let snapshot = self.inner.snapshot();
-            std::mem::transmute(snapshot)
-        };
-        let snapshot = Some(snapshot);
-
-        RocksDB {
-            inner: self.inner.clone(),
-            read_opts: Self::generate_read_opts(&snapshot),
-            snapshot,
-            phantom: PhantomData,
-        }
-    }
 }
 
 impl<Access> KeyValueAccessor for RocksDB<Access>
@@ -310,6 +292,27 @@ impl<'a> Transactional<'a> for RocksDB<FullAccess> {
     }
 }
 
+impl Snapshottable for RocksDB<FullAccess> {
+    type Snapshot = RocksDB<ViewOnlyAccess>;
+
+    fn snapshot(&self) -> Self::Snapshot {
+        // Transmute snapshot to be static lifetime. Snapshot is dropped
+        // safely before the RocksDB manually.
+        let snapshot = unsafe {
+            let snapshot = self.inner.snapshot();
+            std::mem::transmute(snapshot)
+        };
+        let snapshot = Some(snapshot);
+
+        RocksDB {
+            inner: self.inner.clone(),
+            read_opts: Self::generate_read_opts(&snapshot),
+            snapshot,
+            phantom: PhantomData,
+        }
+    }
+}
+
 #[cfg(feature = "test-helpers")]
 pub fn create_test_db() -> RocksDB<FullAccess> {
     let config = Config {
@@ -322,7 +325,9 @@ pub fn create_test_db() -> RocksDB<FullAccess> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kv_store::{IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator};
+    use crate::kv_store::{
+        IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Snapshottable,
+    };
     use crate::schema::Dummy;
 
     use super::{create_test_db, FullAccess, RocksDB};
@@ -446,7 +451,7 @@ mod tests {
         let key = 0;
         assert!(db.exists::<Dummy>(&key).unwrap());
 
-        let snapshot = db.create_snapshot();
+        let snapshot = db.snapshot();
         assert!(snapshot.exists::<Dummy>(&key).unwrap());
 
         db.delete::<Dummy>(&key).unwrap();
@@ -460,7 +465,7 @@ mod tests {
     fn drop_snapshot_after_dropping_database() {
         let db = create_populated_db();
 
-        let snapshot = db.create_snapshot();
+        let snapshot = db.snapshot();
 
         drop(db);
 

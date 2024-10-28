@@ -61,8 +61,16 @@ pub trait Commitable {
     fn commit(self) -> Result<(), rocksdb::Error>;
 }
 
+/// Database trait to implement to provide a transactional behavior.
 pub trait Transactional<'a> {
     type Transaction: KeyValueAccessor + KeyValueMutator + KeyValueIterator + Commitable + 'a;
 
     fn transaction(&'a self) -> Self::Transaction;
+}
+
+/// Database trait to implement to provide a view snapshot.
+pub trait Snapshottable {
+    type Snapshot: KeyValueAccessor + KeyValueIterator;
+
+    fn snapshot(&self) -> Self::Snapshot;
 }
