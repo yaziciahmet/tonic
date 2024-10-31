@@ -1,0 +1,17 @@
+[package]
+name = "tonic-rpc"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true, optional = true }
+jsonrpsee = { workspace = true, features = ["macros", "server-core", "client-core"] }
+serde = { workspace = true }
+
+[features]
+default = []
+client = ["jsonrpsee/http-client"]
+server = ["dep:async-trait", "jsonrpsee/server"]
