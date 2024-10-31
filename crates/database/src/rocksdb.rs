@@ -288,7 +288,7 @@ impl<'a> Transactional<'a> for RocksDB<FullAccess> {
     type Transaction = InMemoryTransaction<'a>;
 
     fn transaction(&'a self) -> Self::Transaction {
-        InMemoryTransaction::new(&self)
+        InMemoryTransaction::new(self)
     }
 }
 
@@ -300,6 +300,7 @@ impl Snapshottable for RocksDB<FullAccess> {
         // safely before the RocksDB manually.
         let snapshot = unsafe {
             let snapshot = self.inner.snapshot();
+            #[allow(clippy::missing_transmute_annotations)]
             std::mem::transmute(snapshot)
         };
         let snapshot = Some(snapshot);

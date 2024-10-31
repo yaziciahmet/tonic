@@ -136,6 +136,7 @@ where
             select! {
                 event = self.swarm.select_next_some() => {
                     trace!(?event);
+                    #[allow(clippy::single_match)]
                     match event {
                         SwarmEvent::Behaviour(event) => {
                             if let Err(err) = self.handle_behaviour_event(event) {

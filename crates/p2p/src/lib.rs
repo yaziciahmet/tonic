@@ -52,7 +52,7 @@ mod tests {
         let mut p2p = P2PService::new(config, request_receiver, p2p_proxy.clone());
         p2p.listen().await;
 
-        let peer_id = p2p.local_peer_id.clone();
+        let peer_id = p2p.local_peer_id;
         let addr = p2p.address.clone().unwrap();
 
         // Spawn the runner in the background

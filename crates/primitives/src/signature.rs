@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use tonic_crypto_utils::secp256k1;
 
 use crate::address::Address;
@@ -55,10 +57,6 @@ impl Signature {
         &self.0
     }
 
-    pub fn to_string(&self) -> String {
-        format!("0x{}", hex::encode(self.0))
-    }
-
     pub fn r(&self) -> &[u8; 32] {
         self.0[0..32].try_into().expect("Has exactly 32 bytes")
     }
@@ -84,6 +82,12 @@ impl Signature {
                 secp256k1::Error::InvalidRecoveryId,
             ))
         }
+    }
+}
+
+impl Display for Signature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
     }
 }
 

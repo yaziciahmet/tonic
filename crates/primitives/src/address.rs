@@ -36,11 +36,6 @@ impl Address {
         Self(arr)
     }
 
-    /// Convert the address to 0x-prefixed hex string
-    pub fn to_string(&self) -> String {
-        format!("0x{}", hex::encode(self.0))
-    }
-
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
@@ -52,7 +47,7 @@ impl Address {
 
 impl Display for Address {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "0x{}", hex::encode(self.0))
     }
 }
 
