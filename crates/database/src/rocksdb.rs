@@ -314,200 +314,271 @@ impl Snapshottable for RocksDB<FullAccess> {
 }
 
 #[cfg(feature = "test-helpers")]
-pub fn create_test_db() -> RocksDB<FullAccess> {
+pub fn create_test_db(schemas: &[SchemaName]) -> RocksDB<FullAccess> {
     let config = Config {
         max_open_files: 8,
         max_cache_size: 1024 * 1024,
         max_total_wal_size: 2 * 1024 * 1024,
     };
-    RocksDB::open_temp(config, &[crate::schema::Dummy::NAME])
+    RocksDB::open_temp(config, schemas)
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, HashMap};
 
-    use crate::codec;
     use crate::kv_store::{
         IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Snapshottable,
         WriteOperation,
     };
-    use crate::schema::{Dummy, Schema};
+    use crate::schema::{Schema, SchemaName};
+    use crate::{codec, define_schema};
 
-    use super::{create_test_db, FullAccess, RocksDB};
+    use super::create_test_db;
 
-    const ORDERED_KVS: [(u64, u64); 4] = [(0, 100), (1, 200), (2, 200), (3, 300)];
+    define_schema!(
+        (Dummy) u64 => u64
+    );
 
-    fn create_populated_db() -> RocksDB<FullAccess> {
-        let mut db = create_test_db();
-
-        // Populate and check values
-        for (key, value) in &ORDERED_KVS {
-            assert!(!db.exists::<Dummy>(key).unwrap());
-            assert_eq!(db.get::<Dummy>(key).unwrap(), None);
-
-            db.put::<Dummy>(key, value).unwrap();
-
-            assert!(db.exists::<Dummy>(key).unwrap());
-            assert_eq!(db.get::<Dummy>(key).unwrap(), Some(*value));
-        }
-
-        db
-    }
+    const SCHEMAS: &[SchemaName] = &[Dummy::NAME];
 
     #[test]
     fn put_and_get() {
-        create_populated_db();
+        let mut db = create_test_db(SCHEMAS);
+
+        // Put a kv
+        db.put::<Dummy>(&1, &100).unwrap();
+        assert!(db.exists::<Dummy>(&1).unwrap());
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), Some(100));
+
+        // Put another kv and assure that previously put exists as well
+        db.put::<Dummy>(&2, &200).unwrap();
+        assert!(db.exists::<Dummy>(&1).unwrap());
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), Some(100));
+        assert!(db.exists::<Dummy>(&2).unwrap());
+        assert_eq!(db.get::<Dummy>(&2).unwrap(), Some(200));
     }
 
     #[test]
     fn put_and_delete() {
-        let mut db = create_populated_db();
+        let mut db = create_test_db(SCHEMAS);
 
-        // Delete a key and validate deletion
-        let kv0 = ORDERED_KVS[0];
-        db.delete::<Dummy>(&kv0.0).unwrap();
+        // Put kvs
+        db.put::<Dummy>(&1, &100).unwrap();
+        db.put::<Dummy>(&2, &200).unwrap();
+        assert!(db.exists::<Dummy>(&1).unwrap());
+        assert!(db.exists::<Dummy>(&2).unwrap());
 
-        assert!(!db.exists::<Dummy>(&kv0.0).unwrap());
-        assert_eq!(db.get::<Dummy>(&kv0.0).unwrap(), None);
+        // Delete one of them
+        db.delete::<Dummy>(&1).unwrap();
+        assert!(!db.exists::<Dummy>(&1).unwrap());
+        assert!(db.exists::<Dummy>(&2).unwrap());
 
-        let count = db.iterator::<Dummy>(IteratorMode::Start).count();
-        assert_eq!(count, ORDERED_KVS.len() - 1);
+        // Delete the other one as well
+        db.delete::<Dummy>(&2).unwrap();
+        assert!(!db.exists::<Dummy>(&1).unwrap());
+        assert!(!db.exists::<Dummy>(&2).unwrap());
     }
 
     #[test]
     fn put_and_multi_get() {
-        let db = create_populated_db();
+        let mut db = create_test_db(SCHEMAS);
 
-        // Get all keys
-        let (ordered_keys, ordered_values): (Vec<_>, Vec<_>) =
-            ORDERED_KVS.into_iter().map(|(k, v)| (k, Some(v))).unzip();
-        assert_eq!(db.multi_get::<Dummy>(ordered_keys).unwrap(), ordered_values);
+        // Put kvs
+        db.put::<Dummy>(&1, &100).unwrap();
+        db.put::<Dummy>(&2, &200).unwrap();
+        db.put::<Dummy>(&3, &300).unwrap();
+        assert!(db.exists::<Dummy>(&1).unwrap());
+        assert!(db.exists::<Dummy>(&2).unwrap());
+        assert!(db.exists::<Dummy>(&3).unwrap());
 
-        // Only get even keys
-        let (ordered_keys, ordered_values): (Vec<_>, Vec<_>) = ORDERED_KVS
-            .into_iter()
-            .filter_map(|(k, v)| if k % 2 == 0 { Some((k, Some(v))) } else { None })
-            .unzip();
-        assert_eq!(db.multi_get::<Dummy>(ordered_keys).unwrap(), ordered_values);
+        // Check multi_get
+        assert_eq!(
+            db.multi_get::<Dummy>(vec![1, 2, 3]).unwrap(),
+            vec![Some(100), Some(200), Some(300)]
+        );
+        assert_eq!(
+            db.multi_get::<Dummy>(vec![4, 5, 6]).unwrap(),
+            vec![None, None, None]
+        );
+        assert_eq!(
+            db.multi_get::<Dummy>(vec![1, 3, 5]).unwrap(),
+            vec![Some(100), Some(300), None]
+        );
     }
 
     #[test]
     fn iterator() {
-        let db = create_populated_db();
+        let mut db = create_test_db(SCHEMAS);
 
-        // Validate entry count
-        let count = db.iterator::<Dummy>(IteratorMode::Start).count();
-        assert_eq!(count, ORDERED_KVS.len());
+        // Put kvs
+        db.put::<Dummy>(&1, &100).unwrap();
+        db.put::<Dummy>(&2, &200).unwrap();
+        db.put::<Dummy>(&3, &300).unwrap();
+        assert!(db.exists::<Dummy>(&1).unwrap());
+        assert!(db.exists::<Dummy>(&2).unwrap());
+        assert!(db.exists::<Dummy>(&3).unwrap());
 
-        let ordered_kvs = ORDERED_KVS.clone();
-        // Validate each key-value entry in ascending order
+        // Iterate over all kvs
         let kvs = db
             .iterator::<Dummy>(IteratorMode::Start)
-            .map(|kv| kv.unwrap())
-            .enumerate()
+            .map(|r| r.unwrap())
             .collect::<Vec<_>>();
-        for (idx, kv) in kvs {
-            assert_eq!(kv, ordered_kvs[idx]);
-        }
+        assert_eq!(kvs, vec![(1, 100), (2, 200), (3, 300)]);
 
-        // Validate each key-value entry in descending order
-        let mut ordered_kvs_rev = ORDERED_KVS.clone();
-        ordered_kvs_rev.reverse();
+        // Iterate over all kvs in reverse
         let kvs = db
             .iterator::<Dummy>(IteratorMode::End)
-            .map(|kv| kv.unwrap())
-            .enumerate()
+            .map(|r| r.unwrap())
             .collect::<Vec<_>>();
-        for (idx, kv) in kvs {
-            assert_eq!(kv, ordered_kvs_rev[idx]);
-        }
+        assert_eq!(kvs, vec![(3, 300), (2, 200), (1, 100)]);
 
-        // Iterate starting from the 2nd index of kvs
-        let ordered_kvs_sliced = &ORDERED_KVS[2..];
+        // Iterate over kvs after 2
         let kvs = db
-            .iterator::<Dummy>(IteratorMode::Forward(&ordered_kvs_sliced[0].0))
-            .map(|kv| kv.unwrap())
-            .enumerate()
+            .iterator::<Dummy>(IteratorMode::Forward(&2))
+            .map(|r| r.unwrap())
             .collect::<Vec<_>>();
-        for (idx, kv) in kvs {
-            assert_eq!(kv, ordered_kvs_sliced[idx]);
-        }
+        assert_eq!(kvs, vec![(2, 200), (3, 300)]);
 
-        // Iterate in reverse starting from the LEN-2 index of kvs
-        let mut ordered_kvs_rev = ORDERED_KVS.clone();
-        ordered_kvs_rev.reverse();
-        let ordered_kvs_rev_sliced = &ordered_kvs_rev[1..];
+        // Iterate over kvs before 2 in reverse
         let kvs = db
-            .iterator::<Dummy>(IteratorMode::Reverse(&ordered_kvs_rev_sliced[0].0))
-            .map(|kv| kv.unwrap())
-            .enumerate()
+            .iterator::<Dummy>(IteratorMode::Reverse(&2))
+            .map(|r| r.unwrap())
             .collect::<Vec<_>>();
-        for (idx, kv) in kvs {
-            assert_eq!(kv, ordered_kvs_rev_sliced[idx]);
-        }
+        assert_eq!(kvs, vec![(2, 200), (1, 100)]);
+
+        // Iterate over kvs after 3
+        let kvs = db
+            .iterator::<Dummy>(IteratorMode::Forward(&3))
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(kvs, vec![(3, 300)]);
+
+        // Iterate over kvs before 1 in reverse
+        let kvs = db
+            .iterator::<Dummy>(IteratorMode::Reverse(&1))
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(kvs, vec![(1, 100)]);
+
+        // Iterate over keys after a key that doesn't exist, starts from the closest key
+        let kvs = db
+            .iterator::<Dummy>(IteratorMode::Forward(&0))
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(kvs, vec![(1, 100), (2, 200), (3, 300)]);
+
+        // Iterate over keys before a key that doesn't exist in reverse, starts from the closest key
+        let kvs = db
+            .iterator::<Dummy>(IteratorMode::Reverse(&4))
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(kvs, vec![(3, 300), (2, 200), (1, 100)]);
+
+        // Iterate over keys before a key that doesn't exist in reverse, and doesn't have any closest key, should be empty iterator
+        let kvs = db
+            .iterator::<Dummy>(IteratorMode::Reverse(&0))
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(kvs, vec![]);
+
+        // Iterate over keys after a key that doesn't exist and doesn't have any closest key, should be empty iterator
+        let kvs = db
+            .iterator::<Dummy>(IteratorMode::Forward(&4))
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(kvs, vec![]);
     }
 
     #[test]
     fn write_batch() {
-        let mut db = create_test_db();
+        let mut db = create_test_db(SCHEMAS);
+
+        // Insert 2 kvs with write_batch
+        let mut changes = HashMap::new();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+        btree.insert(
+            codec::serialize(&1u64),
+            WriteOperation::Put(codec::serialize(&100u64)),
+        );
+        btree.insert(
+            codec::serialize(&2u64),
+            WriteOperation::Put(codec::serialize(&200u64)),
+        );
+        db.write_batch(changes).unwrap();
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), Some(100));
+        assert_eq!(db.get::<Dummy>(&2).unwrap(), Some(200));
 
         let mut changes = HashMap::new();
         let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
 
-        // Insert 2 key-value pairs
-        let (key_1, value_1) = (1, 100);
-        let (key_2, value_2) = (2, 200);
+        // Delete one of the previous keys, and add a new kv
         btree.insert(
-            codec::serialize(&key_1),
-            WriteOperation::Put(codec::serialize(&value_1)),
+            codec::serialize(&3u64),
+            WriteOperation::Put(codec::serialize(&300u64)),
         );
-        btree.insert(
-            codec::serialize(&key_2),
-            WriteOperation::Put(codec::serialize(&value_2)),
-        );
+        btree.insert(codec::serialize(&2u64), WriteOperation::Delete);
 
         db.write_batch(changes).unwrap();
-        assert_eq!(db.get::<Dummy>(&key_1).unwrap(), Some(value_1));
-        assert_eq!(db.get::<Dummy>(&key_2).unwrap(), Some(value_2));
-
-        let mut changes = HashMap::new();
-        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
-
-        // Delete one of the previous keys, and add another key-value pair
-        let (key_3, value_3) = (3, 300);
-        btree.insert(
-            codec::serialize(&key_3),
-            WriteOperation::Put(codec::serialize(&value_3)),
-        );
-        btree.insert(codec::serialize(&key_2), WriteOperation::Delete);
-
-        db.write_batch(changes).unwrap();
-        assert_eq!(db.get::<Dummy>(&key_1).unwrap(), Some(value_1));
-        assert_eq!(db.get::<Dummy>(&key_2).unwrap(), None);
-        assert_eq!(db.get::<Dummy>(&key_3).unwrap(), Some(value_3));
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), Some(100));
+        assert_eq!(db.get::<Dummy>(&2).unwrap(), None);
+        assert_eq!(db.get::<Dummy>(&3).unwrap(), Some(300));
     }
 
     #[test]
-    fn snapshot_gets_key_after_delete() {
-        let mut db = create_populated_db();
+    fn snapshot_key_exists_after_delete() {
+        let mut db = create_test_db(SCHEMAS);
 
-        let key = 0;
-        assert!(db.exists::<Dummy>(&key).unwrap());
+        db.put::<Dummy>(&1, &100).unwrap();
+        db.put::<Dummy>(&2, &200).unwrap();
+        assert!(db.exists::<Dummy>(&1).unwrap());
+        assert!(db.exists::<Dummy>(&2).unwrap());
 
         let snapshot = db.snapshot();
-        assert!(snapshot.exists::<Dummy>(&key).unwrap());
+        assert!(snapshot.exists::<Dummy>(&1).unwrap());
+        assert!(snapshot.exists::<Dummy>(&2).unwrap());
 
-        db.delete::<Dummy>(&key).unwrap();
+        // Delete key
+        db.delete::<Dummy>(&1).unwrap();
 
         // Key doesn't exist in database but exists in snapshot
-        assert!(!db.exists::<Dummy>(&key).unwrap());
-        assert!(snapshot.exists::<Dummy>(&key).unwrap());
+        assert!(!db.exists::<Dummy>(&1).unwrap());
+        assert!(db.exists::<Dummy>(&2).unwrap());
+        assert!(snapshot.exists::<Dummy>(&1).unwrap());
+        assert!(snapshot.exists::<Dummy>(&2).unwrap());
+    }
+
+    #[test]
+    fn snapshot_key_doesnt_exist_after_put() {
+        let mut db = create_test_db(SCHEMAS);
+
+        db.put::<Dummy>(&1, &100).unwrap();
+        db.put::<Dummy>(&2, &200).unwrap();
+        assert!(db.exists::<Dummy>(&1).unwrap());
+        assert!(db.exists::<Dummy>(&2).unwrap());
+
+        let snapshot = db.snapshot();
+        assert!(snapshot.exists::<Dummy>(&1).unwrap());
+        assert!(snapshot.exists::<Dummy>(&2).unwrap());
+
+        // Put new value
+        db.put::<Dummy>(&3, &300).unwrap();
+
+        // Key exist in database but doesn't exist in snapshot
+        assert!(db.exists::<Dummy>(&3).unwrap());
+        assert!(!snapshot.exists::<Dummy>(&3).unwrap());
+
+        // Update existing value
+        db.put::<Dummy>(&1, &1000).unwrap();
+
+        // Db should be updated but snapshot should not change
+        assert_eq!(db.get::<Dummy>(&1).unwrap(), Some(1000));
+        assert_eq!(snapshot.get::<Dummy>(&1).unwrap(), Some(100));
     }
 
     #[test]
     fn drop_snapshot_after_dropping_database() {
-        let db = create_populated_db();
+        let db = create_test_db(SCHEMAS);
 
         let snapshot = db.snapshot();
 

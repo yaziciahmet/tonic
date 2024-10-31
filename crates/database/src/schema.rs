@@ -29,12 +29,6 @@ macro_rules! define_schema {
     };
 }
 
-#[cfg(feature = "test-helpers")]
-crate::define_schema!(
-    /// A very very dummy schema
-    (Dummy) u64 => u64
-);
-
 #[cfg(test)]
 mod tests {
     use serde::{Deserialize, Serialize};

@@ -147,16 +147,22 @@ impl<'a> Commitable for InMemoryTransaction<'a> {
 mod tests {
     use std::collections::{BTreeMap, HashMap};
 
-    use crate::codec;
     use crate::kv_store::{
         Commitable, KeyValueAccessor, KeyValueMutator, Transactional, WriteOperation,
     };
     use crate::rocksdb::create_test_db;
-    use crate::schema::{Dummy, Schema};
+    use crate::schema::{Schema, SchemaName};
+    use crate::{codec, define_schema};
+
+    define_schema!(
+        (Dummy) u64 => u64
+    );
+
+    const SCHEMAS: &[SchemaName] = &[Dummy::NAME];
 
     #[test]
     fn put() {
-        let db = create_test_db();
+        let db = create_test_db(SCHEMAS);
         let mut tx = db.transaction();
 
         tx.put::<Dummy>(&1, &100).unwrap();
@@ -169,7 +175,7 @@ mod tests {
 
     #[test]
     fn put_and_delete() {
-        let db = create_test_db();
+        let db = create_test_db(SCHEMAS);
         let mut tx = db.transaction();
 
         tx.put::<Dummy>(&1, &100).unwrap();
@@ -183,7 +189,7 @@ mod tests {
 
     #[test]
     fn get_prev_data() {
-        let mut db = create_test_db();
+        let mut db = create_test_db(SCHEMAS);
         db.put::<Dummy>(&1, &100).unwrap();
 
         let tx = db.transaction();
@@ -192,7 +198,7 @@ mod tests {
 
     #[test]
     fn put_and_multi_get() {
-        let mut db = create_test_db();
+        let mut db = create_test_db(SCHEMAS);
         db.put::<Dummy>(&1, &100).unwrap();
 
         let mut tx = db.transaction();
@@ -215,7 +221,7 @@ mod tests {
 
     #[test]
     fn write_batch() {
-        let db = create_test_db();
+        let db = create_test_db(SCHEMAS);
         let mut tx = db.transaction();
 
         let mut changes = HashMap::new();
