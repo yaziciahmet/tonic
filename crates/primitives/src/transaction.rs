@@ -12,6 +12,7 @@ pub enum TransactionKind {
 
 #[derive(Debug)]
 pub struct Transaction {
+    pub from: Address,
     pub to: TransactionKind,
     pub nonce: u64,
     pub value: U256,
@@ -25,4 +26,12 @@ pub struct Transaction {
 pub struct TransactionSigned {
     pub transaction: Transaction,
     pub signature: Signature,
+}
+
+pub type TransactionHash = [u8; 32];
+
+#[derive(Debug)]
+pub struct TransactionWithHash {
+    pub transaction: Transaction,
+    pub hash: TransactionHash,
 }

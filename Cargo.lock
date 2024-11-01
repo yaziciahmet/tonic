@@ -3593,6 +3593,9 @@ dependencies = [
 [[package]]
 name = "tonic-txpool"
 version = "0.1.0"
+dependencies = [
+ "tonic-primitives",
+]
 
 [[package]]
 name = "tower"

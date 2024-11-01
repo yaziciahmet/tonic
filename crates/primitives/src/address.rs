@@ -3,7 +3,7 @@ use std::fmt::Display;
 use tonic_crypto_utils::keccak256::keccak256;
 use tonic_crypto_utils::secp256k1::PublicKey;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address([u8; 20]);
 
 impl Address {
