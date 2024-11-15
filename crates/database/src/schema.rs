@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 
 pub type SchemaName = &'static str;
 
@@ -9,8 +8,8 @@ pub type SchemaName = &'static str;
 /// for easy serialization of the key and values.
 pub trait Schema {
     const NAME: SchemaName;
-    type Key: Serialize + DeserializeOwned + Debug;
-    type Value: Serialize + DeserializeOwned + Debug;
+    type Key: BorshSerialize + BorshDeserialize + Debug;
+    type Value: BorshSerialize + BorshDeserialize + Debug;
 }
 
 /// Macro to easily define a key-value schema by implementing `Schema` trait.
@@ -31,9 +30,9 @@ macro_rules! define_schema {
 
 #[cfg(test)]
 mod tests {
-    use serde::{Deserialize, Serialize};
+    use borsh::{BorshDeserialize, BorshSerialize};
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, BorshSerialize, BorshDeserialize)]
     pub struct TestBlock {
         height: u64,
         hash: [u8; 32],

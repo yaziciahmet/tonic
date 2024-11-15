@@ -7,8 +7,10 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
+tonic-codec = { workspace = true }
+
 anyhow = { workspace = true }
-bincode = { workspace = true }
+borsh = { workspace = true }
 futures = { workspace = true }
 libp2p = { version = "0.54", default-features = false, features = [
   "gossipsub",
@@ -21,7 +23,6 @@ libp2p = { version = "0.54", default-features = false, features = [
   "tokio",
   "yamux",
 ] }
-serde = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

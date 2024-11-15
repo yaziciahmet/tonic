@@ -17,7 +17,7 @@ pub enum P2PRequest {
     BroadcastMessage(GossipMessage),
 }
 
-const MAX_MESSAGE_SIZE: u64 = 1024 * 1024 * 4; // 4 MB
+const MAX_MESSAGE_SIZE: usize = 1024 * 1024 * 4; // 4 MB
 
 struct NetworkMetadata {
     codec: GossipCodec,

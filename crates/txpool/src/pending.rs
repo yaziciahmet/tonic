@@ -177,9 +177,15 @@ mod tests {
         let tx = generate_pool_tx(address, 2, 10, 7);
         pool.add_transaction(Arc::new(tx), 2);
 
-        let v = pool.best_iter().map(|tx| {
-            (tx.transaction.nonce, tx.transaction.max_priority_fee_per_gas)
-        }).collect::<Vec<_>>();
+        let v = pool
+            .best_iter()
+            .map(|tx| {
+                (
+                    tx.transaction.nonce,
+                    tx.transaction.max_priority_fee_per_gas,
+                )
+            })
+            .collect::<Vec<_>>();
 
         dbg!(v);
     }

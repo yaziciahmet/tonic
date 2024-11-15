@@ -1,11 +1,9 @@
-use serde::{Deserialize, Serialize};
-
 #[derive(Clone, Debug)]
 pub enum GossipTopicTag {
     Dummy,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum GossipMessage {
     Dummy(u64),
 }

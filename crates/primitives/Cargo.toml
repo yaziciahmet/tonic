@@ -7,13 +7,13 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
+tonic-crypto-utils = { workspace = true, features = ["keccak256", "secp256k1"] }
+
 bytemuck = { workspace = true }
 hex = { workspace = true }
 primitive-types = { workspace = true }
 rand = { workspace = true, optional = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
-tonic-crypto-utils = { workspace = true, features = ["keccak256", "secp256k1"] }
 
 [features]
 default = []
