@@ -64,12 +64,13 @@ impl<'a> Reader<'a> {
 
 impl<'a> io::Read for Reader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let len = buf.len().min(self.data.len() - self.read_index);
-        if len == 0 {
-            return Ok(0);
+        let len = std::cmp::min(buf.len(), self.data.len() - self.read_index);
+        match len {
+            0 => return Ok(0),
+            1 => buf[0] = self.data[0],
+            len => buf[0..len].copy_from_slice(&self.data[self.read_index..self.read_index + len]),
         }
 
-        buf[0..len].copy_from_slice(&self.data[self.read_index..self.read_index + len]);
         self.read_index += len;
         Ok(len)
     }
