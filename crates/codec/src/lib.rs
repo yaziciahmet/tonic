@@ -1,6 +1,7 @@
 use borsh::io;
 use borsh::{BorshDeserialize, BorshSerialize};
 
+const DEFAULT_SERIALIZER_CAPACITY: usize = 1024;
 const DEFAULT_MAX_DATA_SIZE: usize = 8 * 1024 * 1024; // 8 MB
 
 fn serialize_with_limit<T>(v: &T, limit: usize) -> io::Result<Vec<u8>>
@@ -27,11 +28,11 @@ where
 }
 
 /// Serializes type into bytes without checking the size
-pub fn serialize<T>(t: &T) -> io::Result<Vec<u8>>
+pub fn serialize<T>(v: &T) -> io::Result<Vec<u8>>
 where
     T: BorshSerialize,
 {
-    borsh::to_vec(t)
+    borsh::to_vec(v)
 }
 
 /// Deserializes bytes into the type without checking the size
@@ -81,17 +82,14 @@ struct Writer {
 
 impl Default for Writer {
     fn default() -> Self {
-        Self {
-            data: vec![],
-            limit: DEFAULT_MAX_DATA_SIZE,
-        }
+        Self::with_limit(DEFAULT_MAX_DATA_SIZE)
     }
 }
 
 impl Writer {
     fn with_limit(limit: usize) -> Self {
         Self {
-            data: vec![],
+            data: Vec::with_capacity(DEFAULT_SERIALIZER_CAPACITY),
             limit,
         }
     }
@@ -162,7 +160,7 @@ mod tests {
     struct TestStruct {
         a: u64,
         b: String,
-        c: Vec<u8>,
+        c: Vec<u32>,
         d: [u8; 32],
     }
 
@@ -220,5 +218,46 @@ mod tests {
 
         let codec = SizeBoundedCodec::new(1);
         matches!(codec.serialize(&v), Err(_));
+    }
+
+    #[test]
+    fn bench() {
+        let t = TestStruct {
+            a: 1234,
+            b: "hello".to_string(),
+            c: vec![
+                4, 16, 23, 99, 16, 23, 99, 16, 23, 99, 16, 23, 99, 16, 23, 99, 16, 23, 99, 16, 23,
+                99,
+            ],
+            d: [1; 32],
+        };
+        let bytes = serialize(&t).unwrap();
+        let codec = SizeBoundedCodec::default();
+
+        let n = 100_000;
+
+        let start = std::time::Instant::now();
+        for _ in 0..n {
+            serialize(&t).unwrap();
+        }
+        println!("serialize: {}", start.elapsed().as_micros());
+
+        let start = std::time::Instant::now();
+        for _ in 0..n {
+            codec.serialize(&t).unwrap();
+        }
+        println!("codec serialize: {}", start.elapsed().as_micros());
+
+        let start = std::time::Instant::now();
+        for _ in 0..n {
+            deserialize::<TestStruct, _>(&bytes).unwrap();
+        }
+        println!("deserialize: {}", start.elapsed().as_micros());
+
+        let start = std::time::Instant::now();
+        for _ in 0..n {
+            codec.deserialize::<TestStruct, _>(&bytes).unwrap();
+        }
+        println!("codec deserialize: {}", start.elapsed().as_micros());
     }
 }
