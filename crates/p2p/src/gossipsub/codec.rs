@@ -34,7 +34,8 @@ impl GossipCodec {
     fn verify_message_size(&self, size: usize) -> anyhow::Result<()> {
         if size > self.max_message_size {
             Err(anyhow!(
-                "P2P message size exceeds maximum limit. size={size} limit={}",
+                "P2P message size exceeds maximum limit. size={} limit={}",
+                size,
                 self.max_message_size
             ))
         } else {
