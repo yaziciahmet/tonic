@@ -1,4 +1,5 @@
-use crate::{pending::PendingPool, PoolTransaction};
+use crate::pending::PendingPool;
+use crate::pool_transaction::PoolTransaction;
 
 pub struct TransactionPool {
     pending: PendingPool,

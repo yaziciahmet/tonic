@@ -3,9 +3,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use tonic_primitives::address::Address;
-
-use crate::{PoolTransaction, TransactionId};
+use crate::pool_transaction::{PoolTransaction, TransactionId};
 
 pub struct PendingPool {
     submission_id: u64,
@@ -24,7 +22,7 @@ impl PendingPool {
     }
 
     pub fn add_transaction(&mut self, transaction: Arc<PoolTransaction>, base_fee: u64) {
-        let submission_id = self.next_id();
+        let submission_id = self.next_submission_id();
         let priority = self.priority_by_tip(&transaction, base_fee);
 
         let pending_tx = PendingTransaction::new(submission_id, transaction, priority);
@@ -65,7 +63,7 @@ impl PendingPool {
         )
     }
 
-    fn next_id(&mut self) -> u64 {
+    fn next_submission_id(&mut self) -> u64 {
         let id = self.submission_id;
         self.submission_id = self.submission_id.wrapping_add(1);
         id
@@ -130,7 +128,7 @@ mod tests {
         transaction::{Transaction, TransactionKind},
     };
 
-    use crate::{PoolTransaction, TransactionId};
+    use crate::pool_transaction::{PoolTransaction, TransactionId};
 
     use super::PendingPool;
 
@@ -187,6 +185,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
+        dbg!(v);
+
+        let v = pool.all.iter().map(|tx| (tx.transaction.transaction_id.sender.to_string(), tx.transaction.transaction_id.nonce)).collect::<Vec<_>>();
         dbg!(v);
     }
 }
