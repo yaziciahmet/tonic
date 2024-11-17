@@ -40,13 +40,13 @@ impl Ord for TransactionId {
 
 #[derive(Debug)]
 pub struct PoolTransaction {
-    pub transaction: Transaction,
-    pub transaction_id: TransactionId,
+    pub tx: Transaction,
+    pub tx_id: TransactionId,
     pub timestamp: Instant,
 }
 
 impl PoolTransaction {
     pub fn id(&self) -> TransactionId {
-        self.transaction_id
+        self.tx_id
     }
 }

@@ -24,6 +24,6 @@ pub struct Transaction {
 
 #[derive(Debug)]
 pub struct SignedTransaction {
-    pub transaction: Transaction,
+    pub tx: Transaction,
     pub signature: Signature,
 }

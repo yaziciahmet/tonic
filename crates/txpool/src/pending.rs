@@ -8,59 +8,56 @@ use crate::pool_transaction::{PoolTransaction, TransactionId};
 pub struct PendingPool {
     submission_id: u64,
 
-    by_id: BTreeMap<TransactionId, PendingTransaction>,
-    all: BTreeSet<PendingTransaction>,
+    tx_by_id: BTreeMap<TransactionId, PendingTransaction>,
+    all_txs: BTreeSet<PendingTransaction>,
 }
 
 impl PendingPool {
     pub fn new() -> Self {
         Self {
             submission_id: 0,
-            by_id: BTreeMap::new(),
-            all: BTreeSet::new(),
+            tx_by_id: BTreeMap::new(),
+            all_txs: BTreeSet::new(),
         }
     }
 
-    pub fn add_transaction(&mut self, transaction: Arc<PoolTransaction>, base_fee: u64) {
+    pub fn add_transaction(&mut self, tx: Arc<PoolTransaction>, base_fee: u64) {
         let submission_id = self.next_submission_id();
-        let priority = self.priority_by_tip(&transaction, base_fee);
+        let priority = self.priority_by_tip(&tx, base_fee);
 
-        let pending_tx = PendingTransaction::new(submission_id, transaction, priority);
+        let pending_tx = PendingTransaction::new(submission_id, tx, priority);
 
-        match self.by_id.entry(pending_tx.id()) {
+        match self.tx_by_id.entry(pending_tx.id()) {
             Entry::Occupied(mut entry) => {
                 // If transaction id exists, this is a replacement transaction,
                 // and replacement transactions are only accepted if the tip
                 // is higher than the previous transaction.
                 let existing_tx = entry.get_mut();
                 if pending_tx.cmp(existing_tx) == Ordering::Greater {
-                    assert!(self.all.remove(existing_tx));
-                    assert!(self.all.insert(pending_tx.clone()));
+                    assert!(self.all_txs.remove(existing_tx));
+                    assert!(self.all_txs.insert(pending_tx.clone()));
                     *existing_tx = pending_tx;
                 }
             }
             Entry::Vacant(entry) => {
                 entry.insert(pending_tx.clone());
-                assert!(self.all.insert(pending_tx));
+                assert!(self.all_txs.insert(pending_tx));
             }
         };
     }
 
     pub fn best_iter(&self) -> impl Iterator<Item = &Arc<PoolTransaction>> + '_ {
-        self.all.iter().map(|tx| &tx.transaction).rev()
+        self.all_txs.iter().map(|tx| &tx.tx).rev()
     }
 
-    fn priority_by_tip(&self, transaction: &PoolTransaction, base_fee: u64) -> u64 {
-        let transaction = &transaction.transaction;
+    fn priority_by_tip(&self, tx: &PoolTransaction, base_fee: u64) -> u64 {
+        let tx = &tx.tx;
         assert!(
-            transaction.max_fee_per_gas >= base_fee,
+            tx.max_fee_per_gas >= base_fee,
             "Pooled transaction must have max_fee_per_gas >= base_fee"
         );
 
-        cmp::min(
-            transaction.max_fee_per_gas - base_fee,
-            transaction.max_priority_fee_per_gas,
-        )
+        cmp::min(tx.max_fee_per_gas - base_fee, tx.max_priority_fee_per_gas)
     }
 
     fn next_submission_id(&mut self) -> u64 {
@@ -74,22 +71,22 @@ impl PendingPool {
 struct PendingTransaction {
     submission_id: u64,
     /// Inner `PooledTransaction`.
-    transaction: Arc<PoolTransaction>,
+    tx: Arc<PoolTransaction>,
     /// Priority of the pending transaction. The higher the better.
     priority: u64,
 }
 
 impl PendingTransaction {
-    fn new(submission_id: u64, transaction: Arc<PoolTransaction>, priority: u64) -> Self {
+    fn new(submission_id: u64, tx: Arc<PoolTransaction>, priority: u64) -> Self {
         Self {
             submission_id,
-            transaction,
+            tx,
             priority,
         }
     }
 
     fn id(&self) -> TransactionId {
-        self.transaction.id()
+        self.tx.id()
     }
 }
 
@@ -139,7 +136,7 @@ mod tests {
         max_priority_fee_per_gas: u64,
     ) -> PoolTransaction {
         PoolTransaction {
-            transaction: Transaction {
+            tx: Transaction {
                 from,
                 to: TransactionKind::CreateToken,
                 nonce,
@@ -149,7 +146,7 @@ mod tests {
                 max_priority_fee_per_gas,
                 chain_id: ChainId::Testnet,
             },
-            transaction_id: TransactionId::new(from, nonce),
+            tx_id: TransactionId::new(from, nonce),
             timestamp: Instant::now(),
         }
     }
@@ -177,17 +174,16 @@ mod tests {
 
         let v = pool
             .best_iter()
-            .map(|tx| {
-                (
-                    tx.transaction.nonce,
-                    tx.transaction.max_priority_fee_per_gas,
-                )
-            })
+            .map(|tx| (tx.tx.nonce, tx.tx.max_priority_fee_per_gas))
             .collect::<Vec<_>>();
 
         dbg!(v);
 
-        let v = pool.all.iter().map(|tx| (tx.transaction.transaction_id.sender.to_string(), tx.transaction.transaction_id.nonce)).collect::<Vec<_>>();
+        let v = pool
+            .all_txs
+            .iter()
+            .map(|tx| (tx.tx.tx_id.sender.to_string(), tx.tx.tx_id.nonce))
+            .collect::<Vec<_>>();
         dbg!(v);
     }
 }
