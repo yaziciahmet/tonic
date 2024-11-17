@@ -3549,13 +3549,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic-codec"
-version = "0.1.0"
-dependencies = [
- "borsh",
-]
-
-[[package]]
 name = "tonic-crypto-utils"
 version = "0.1.0"
 dependencies = [
@@ -3571,7 +3564,6 @@ dependencies = [
  "borsh",
  "rocksdb",
  "tempfile",
- "tonic-codec",
 ]
 
 [[package]]
@@ -3585,7 +3577,6 @@ dependencies = [
  "sha2 0.10.8",
  "tokio",
  "tonic",
- "tonic-codec",
  "tracing",
 ]
 

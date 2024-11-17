@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "bin/tonic",
-    "crates/codec",
     "crates/crypto-utils",
     "crates/database",
     "crates/p2p",
@@ -21,7 +20,6 @@ repository = "https://github.com/yaziciahmet/tonic"
 [workspace.dependencies]
 # Tonic dependencies
 tonic = { path = "bin/tonic", default-features = false }
-tonic-codec = { path = "crates/codec", default-features = false }
 tonic-crypto-utils = { path = "crates/crypto-utils", default-features = false }
 tonic-database = { path = "crates/database", default-features = false }
 tonic-p2p = { path = "crates/p2p", default-features = false }

@@ -7,8 +7,6 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-tonic-codec = { workspace = true }
-
 borsh = { workspace = true }
 rocksdb = { version = "0.22", default-features = false, features = ["lz4"] }
 tempfile = { workspace = true, optional = true }

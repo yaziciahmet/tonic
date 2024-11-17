@@ -1,29 +1,44 @@
 use anyhow::anyhow;
-use tonic_codec::SizeBoundedCodec;
 
 use super::{GossipMessage, GossipTopicTag};
 
 pub struct GossipCodec {
-    inner: SizeBoundedCodec,
+    max_message_size: usize,
 }
 
 impl GossipCodec {
     pub fn new(max_message_size: usize) -> Self {
-        let inner = SizeBoundedCodec::new(max_message_size);
-        Self { inner }
+        Self { max_message_size }
     }
 
     pub fn serialize(&self, message: &GossipMessage) -> anyhow::Result<Vec<u8>> {
-        match message {
-            GossipMessage::Dummy(v) => Ok(self.inner.serialize(v).map_err(|e| anyhow!("{}", e))?),
-        }
+        let data = match message {
+            GossipMessage::Dummy(v) => borsh::to_vec(v).map_err(|e| anyhow!("{}", e))?,
+        };
+
+        self.verify_message_size(data.len())?;
+
+        Ok(data)
     }
 
     pub fn deserialize(&self, tag: &GossipTopicTag, data: &[u8]) -> anyhow::Result<GossipMessage> {
+        self.verify_message_size(data.len())?;
+
         match tag {
             GossipTopicTag::Dummy => Ok(GossipMessage::Dummy(
-                self.inner.deserialize(data).map_err(|e| anyhow!("{}", e))?,
+                borsh::from_slice(data).map_err(|e| anyhow!("{}", e))?,
             )),
+        }
+    }
+
+    fn verify_message_size(&self, size: usize) -> anyhow::Result<()> {
+        if size > self.max_message_size {
+            Err(anyhow!(
+                "P2P message size exceeds maximum limit. size={size} limit={}",
+                self.max_message_size
+            ))
+        } else {
+            Ok(())
         }
     }
 }
