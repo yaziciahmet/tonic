@@ -27,11 +27,14 @@ tonic-primitives = { path = "crates/primitives", default-features = false }
 tonic-rpc = { path = "crates/rpc", default-features = false }
 tonic-txpool = { path = "crates/txpool", default-features = false }
 
+# Alloy dependencies
+# alloy = { version = "0.6", default-features = false }
+
 # Common dependencies
 anyhow = { version = "1", default-features = false }
 async-trait = { version = "0.1", default-features = false }
 borsh = { version = "1.5", default-features = false, features = ["derive", "std"] }
-bytemuck = { version = "1.19", default-features = false }
+bytemuck = { version = "1", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.24", default-features = false }
@@ -41,7 +44,7 @@ secp256k1 = { version = "0.30" ,default-features = false, features = ["global-co
 serde = { version = "1", default-features = false, features = ["derive"] }
 sha2 = { version = "0.10", default-features = false }
 tempfile = { version = "3", default-features = false }
-thiserror = { version = "1", default-features = false }
+thiserror = { version = "2", default-features = false }
 tiny-keccak = { version = "2", default-features = false }
 tokio = { version = "1.41", default-features = false, features = ["rt-multi-thread", "sync", "macros", "time"] }
 tracing = { version = "0.1", default-features = false }

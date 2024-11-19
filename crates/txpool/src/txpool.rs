@@ -57,7 +57,10 @@ impl AllTransactions {
             max_tx_per_account,
             max_pool_size,
         } = self.config;
-        assert!(basefee >= min_protocol_basefee, "Base fee can not be less than minimum protocol fee");
+        assert!(
+            basefee >= min_protocol_basefee,
+            "Base fee can not be less than minimum protocol fee"
+        );
 
         let inner_tx = &tx.tx;
 
@@ -76,9 +79,7 @@ impl AllTransactions {
                     Subpool::Queued
                 }
             }
-            Ordering::Greater => {
-                Subpool::Queued
-            }
+            Ordering::Greater => Subpool::Queued,
             Ordering::Less => {
                 return Err(AddTransactionErr::NonceTooLow);
             }
