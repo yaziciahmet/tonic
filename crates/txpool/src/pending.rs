@@ -3,7 +3,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::pool_transaction::{PoolTransaction, TransactionId};
+use crate::transaction::{PoolTransaction, TransactionId};
 
 pub struct PendingPool {
     submission_id: u64,
@@ -125,7 +125,7 @@ mod tests {
         transaction::{Transaction, TransactionKind},
     };
 
-    use crate::pool_transaction::{PoolTransaction, TransactionId};
+    use crate::transaction::{PoolTransaction, TransactionId};
 
     use super::PendingPool;
 
