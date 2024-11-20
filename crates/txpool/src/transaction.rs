@@ -1,8 +1,7 @@
-use std::cmp::Ordering;
 use std::time::Instant;
+use std::{cmp::Ordering, ops::Deref};
 
-use tonic_primitives::address::Address;
-use tonic_primitives::transaction::Transaction;
+use tonic_primitives::{Address, Transaction, TransactionSignedEcRecovered, TransactionT, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub struct TransactionId {
@@ -39,14 +38,82 @@ impl Ord for TransactionId {
 }
 
 #[derive(Debug)]
-pub struct PoolTransaction {
-    pub tx: Transaction,
-    pub tx_id: TransactionId,
-    pub timestamp: Instant,
+pub struct PooledTransaction {
+    tx: TransactionSignedEcRecovered,
+    tx_id: TransactionId,
+    timestamp: Instant,
+    cost: U256,
 }
 
-impl PoolTransaction {
+impl From<TransactionSignedEcRecovered> for PooledTransaction {
+    fn from(tx: TransactionSignedEcRecovered) -> Self {
+        let tx_id = TransactionId::new(tx.signer(), tx.nonce());
+
+        let gas_cost = match &tx.transaction {
+            Transaction::Legacy(t) => {
+                U256::from(t.gas_price).saturating_mul(U256::from(t.gas_limit))
+            }
+            Transaction::Eip1559(t) => {
+                U256::from(t.max_fee_per_gas).saturating_mul(U256::from(t.gas_limit))
+            }
+            tx => panic!(
+                "{} is not supported, and must already be checked before arriving to mempool",
+                tx.tx_type()
+            ),
+        };
+        let mut cost = tx.value();
+        cost = cost.saturating_add(gas_cost);
+
+        Self {
+            tx,
+            tx_id,
+            timestamp: Instant::now(),
+            cost,
+        }
+    }
+}
+
+impl Deref for PooledTransaction {
+    type Target = TransactionSignedEcRecovered;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tx
+    }
+}
+
+impl PooledTransaction {
     pub fn id(&self) -> TransactionId {
         self.tx_id
+    }
+
+    pub fn timestamp(&self) -> Instant {
+        self.timestamp
+    }
+
+    pub fn cost(&self) -> U256 {
+        self.cost
+    }
+
+    pub fn is_underpriced(
+        &self,
+        replacement: &PooledTransaction,
+        price_bump_percentage: u128,
+    ) -> bool {
+        if replacement.max_fee_per_gas()
+            < self.max_fee_per_gas() * (100 + price_bump_percentage) / 100
+        {
+            return true;
+        }
+
+        if let (Some(self_priority), Some(replacement_priority)) = (
+            self.max_priority_fee_per_gas(),
+            replacement.max_priority_fee_per_gas(),
+        ) {
+            if replacement_priority < self_priority * (100 + price_bump_percentage) / 100 {
+                return true;
+            }
+        }
+
+        false
     }
 }

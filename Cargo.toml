@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "bin/tonic",
-    "crates/crypto-utils",
     "crates/database",
     "crates/p2p",
     "crates/primitives",
@@ -20,7 +19,6 @@ repository = "https://github.com/yaziciahmet/tonic"
 [workspace.dependencies]
 # Tonic dependencies
 tonic = { path = "bin/tonic", default-features = false }
-tonic-crypto-utils = { path = "crates/crypto-utils", default-features = false }
 tonic-database = { path = "crates/database", default-features = false }
 tonic-p2p = { path = "crates/p2p", default-features = false }
 tonic-primitives = { path = "crates/primitives", default-features = false }
@@ -28,7 +26,11 @@ tonic-rpc = { path = "crates/rpc", default-features = false }
 tonic-txpool = { path = "crates/txpool", default-features = false }
 
 # Alloy dependencies
-# alloy = { version = "0.6", default-features = false }
+alloy-consensus = { version = "0.6", default-features = false }
+alloy-eips = { version = "0.6", default-features = false }
+alloy-primitives = { version = "0.8", default-features = false }
+# Reth dependencies
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.2", default-features = false }
 
 # Common dependencies
 anyhow = { version = "1", default-features = false }
@@ -38,7 +40,6 @@ bytemuck = { version = "1", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.24", default-features = false }
-primitive-types = { version = "0.13", default-features = false }
 rand = { version = "0.8" ,default-features = false, features = ["std", "std_rng"] }
 secp256k1 = { version = "0.30" ,default-features = false, features = ["global-context", "recovery"] }
 serde = { version = "1", default-features = false, features = ["derive"] }

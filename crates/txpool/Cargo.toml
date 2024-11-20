@@ -9,7 +9,7 @@ repository = { workspace = true }
 [dependencies]
 tonic-primitives = { workspace = true }
 
-primitive-types = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tonic-primitives = { workspace = true, features = ["test-helpers"] }

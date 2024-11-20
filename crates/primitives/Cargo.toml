@@ -7,14 +7,11 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-tonic-crypto-utils = { workspace = true, features = ["keccak256", "secp256k1"] }
-
-bytemuck = { workspace = true }
-hex = { workspace = true }
-primitive-types = { workspace = true }
-rand = { workspace = true, optional = true }
-thiserror = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true }
+reth-primitives = { workspace = true }
 
 [features]
 default = []
-test-helpers = ["dep:rand", "tonic-crypto-utils/test-helpers"]
+test-helpers = []

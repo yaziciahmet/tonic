@@ -1,123 +1,218 @@
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use primitive_types::U256;
-use tonic_primitives::address::Address;
+use tonic_primitives::{Address, TransactionT, U256};
 
 use crate::config::Config;
 use crate::parked::ParkedPool;
 use crate::pending::PendingPool;
-use crate::transaction::{PoolTransaction, TransactionId};
+use crate::transaction::{PooledTransaction, TransactionId};
 
 pub struct TransactionPool {
+    // Transactions are ready to be included in the block
     pending_pool: PendingPool,
     // 1. account balance is not enough
     // 2. account nonce has gaps
     queued_pool: ParkedPool,
     // Dynamic basefee conditions are not met, but might be met in the future
     basefee_pool: ParkedPool,
+    // All transactions
+    all_txs: AllTransactions,
+    // Account information
+    account_info: HashMap<Address, AccountInfo>,
 }
 
 impl TransactionPool {
-    pub fn add_transaction(&mut self, tx: PoolTransaction) {
-        // TODO: verify tx
+    pub fn new(config: Config) -> Self {
+        Self {
+            pending_pool: PendingPool::new(),
+            queued_pool: ParkedPool::new(),
+            basefee_pool: ParkedPool::new(),
+            all_txs: AllTransactions::new(config),
+            account_info: HashMap::default(),
+        }
+    }
 
-        // let account = self.storage.get_account(transaction.from)
-        // if account.nonce == transaction.nonce {
-        //   self.pending.add_transaction()
-        // }
+    pub fn add_transaction(
+        &mut self,
+        tx: PooledTransaction,
+        on_chain_nonce: u64,
+        on_chain_balance: U256,
+    ) -> Result<(), TransactionPoolError> {
+        self.account_info
+            .entry(tx.signer())
+            .or_default()
+            .update(on_chain_nonce, on_chain_balance);
+
+        let AddTransactionOk {
+            tx,
+            subpool,
+            replaced_tx,
+        } = self
+            .all_txs
+            .add_transaction(tx, on_chain_nonce, on_chain_balance)?;
+
+        if let Some((replaced_tx, replaced_subpool)) = replaced_tx {
+            self.remove_transaction_from_subpool(replaced_tx.id(), replaced_subpool);
+        }
+
+        self.add_transaction_to_subpool(tx, subpool);
+
+        Ok(())
+    }
+
+    fn add_transaction_to_subpool(&mut self, tx: Arc<PooledTransaction>, subpool: Subpool) {
+        match subpool {
+            Subpool::Pending => self.pending_pool.add_transaction(tx, self.all_txs.basefee),
+            Subpool::Queued => self.queued_pool.add_transaction(tx),
+            Subpool::Basefee => self.basefee_pool.add_transaction(tx),
+        }
+    }
+
+    fn remove_transaction_from_subpool(&mut self, tx_id: TransactionId, subpool: Subpool) {
+        match subpool {
+            Subpool::Pending => self.pending_pool.remove_transaction(&tx_id),
+            Subpool::Queued => self.queued_pool.remove_transaction(&tx_id),
+            Subpool::Basefee => self.basefee_pool.remove_transaction(&tx_id),
+        }
     }
 }
 
-pub struct AllTransactions {
+struct AllTransactions {
     config: Config,
-    txs: BTreeMap<TransactionId, PoolTransactionWithSubpool>,
-    account_info: BTreeMap<Address, AccountInfo>,
+    txs: BTreeMap<TransactionId, (Arc<PooledTransaction>, Subpool)>,
+    // TODO: handle this better
+    basefee: u128,
 }
 
 impl AllTransactions {
-    pub fn new(config: Config) -> Self {
+    fn new(config: Config) -> Self {
         Self {
             config,
             txs: BTreeMap::default(),
-            account_info: BTreeMap::default(),
+            basefee: 0,
         }
     }
 
     fn add_transaction(
         &mut self,
-        tx: PoolTransaction,
-        basefee: u64,
-    ) -> Result<AddTransactionOk, AddTransactionErr> {
-        // TODO: check if this tx hash exists already
-        let Config {
-            min_protocol_basefee,
-            max_tx_count,
-            max_tx_per_account,
-            max_pool_size,
-        } = self.config;
-        assert!(
-            basefee >= min_protocol_basefee,
-            "Base fee can not be less than minimum protocol fee"
-        );
+        tx: PooledTransaction,
+        on_chain_nonce: u64,
+        on_chain_balance: U256,
+    ) -> Result<AddTransactionOk, AddTransactionError> {
+        self.validate_tx(&tx)?;
 
-        let inner_tx = &tx.tx;
-
-        if inner_tx.max_fee_per_gas < min_protocol_basefee {
-            return Err(AddTransactionErr::BaseFeeTooLow);
-        }
-
-        // TODO: check if this is a replacement tx, if so, check if it increased tip at least 10%
-
-        let account = self.account_info.get(&inner_tx.from).unwrap();
-        let move_to = match inner_tx.nonce.cmp(&account.nonce) {
+        let subpool = match tx.nonce().cmp(&on_chain_nonce) {
+            // Has next nonce
             Ordering::Equal => {
-                if account.balance < inner_tx.cost(basefee) {
-                    Subpool::Pending
+                // Has enough balance
+                if on_chain_balance >= tx.cost() {
+                    // Has higher max_fee_per_gas
+                    if tx.max_fee_per_gas() >= self.basefee {
+                        Subpool::Pending
+                    } else {
+                        Subpool::Basefee
+                    }
                 } else {
                     Subpool::Queued
                 }
             }
             Ordering::Greater => Subpool::Queued,
             Ordering::Less => {
-                return Err(AddTransactionErr::NonceTooLow);
+                return Err(AddTransactionError::NonceTooLow);
             }
         };
 
         let tx = Arc::new(tx);
 
-        todo!()
+        let mut replaced_tx = None;
+        match self.txs.entry(tx.id()) {
+            Entry::Vacant(entry) => {
+                entry.insert((tx.clone(), subpool));
+            }
+            Entry::Occupied(mut entry) => {
+                let existing_tx = entry.get_mut();
+                if existing_tx
+                    .0
+                    .is_underpriced(&tx, self.config.price_bump_percentage)
+                {
+                    return Err(AddTransactionError::ReplacementTxUnderpriced);
+                }
+
+                replaced_tx = Some(existing_tx.clone());
+
+                *existing_tx = (tx.clone(), subpool);
+            }
+        };
+
+        Ok(AddTransactionOk {
+            tx,
+            subpool,
+            replaced_tx,
+        })
+    }
+
+    fn validate_tx(&self, tx: &PooledTransaction) -> Result<(), AddTransactionError> {
+        let Config {
+            min_protocol_basefee,
+            block_gas_limit,
+            ..
+        } = self.config;
+
+        if tx.max_fee_per_gas() < min_protocol_basefee {
+            return Err(AddTransactionError::FeeBelowMinimumProtocolFee);
+        }
+
+        if tx.gas_limit() > block_gas_limit {
+            return Err(AddTransactionError::GasLimitExceedsBlockGasLimit);
+        }
+
+        Ok(())
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Subpool {
     Pending = 0,
     Queued = 1,
     Basefee = 2,
 }
 
-#[derive(Clone, Debug)]
-struct PoolTransactionWithSubpool {
-    tx: Arc<PoolTransaction>,
-    subpool: Subpool,
+#[derive(Debug, thiserror::Error)]
+pub enum TransactionPoolError {
+    #[error("{0}")]
+    AddTransactionError(#[from] AddTransactionError),
 }
 
 struct AddTransactionOk {
-    tx: Arc<PoolTransaction>,
-    replaced_tx: Option<(Arc<PoolTransaction>, Subpool)>,
-    move_to: Subpool,
+    tx: Arc<PooledTransaction>,
+    subpool: Subpool,
+    replaced_tx: Option<(Arc<PooledTransaction>, Subpool)>,
 }
 
-enum AddTransactionErr {
-    BaseFeeTooLow,
+#[derive(Debug, thiserror::Error)]
+pub enum AddTransactionError {
+    #[error("tx fee below minimum protocol fee")]
+    FeeBelowMinimumProtocolFee,
+    #[error("tx gas limit exceeds block gas limit")]
+    GasLimitExceedsBlockGasLimit,
+    #[error("tx nonce too low")]
     NonceTooLow,
+    #[error("replacement tx underpriced")]
+    ReplacementTxUnderpriced,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct AccountInfo {
-    address: Address,
     nonce: u64,
     balance: U256,
+}
+
+impl AccountInfo {
+    fn update(&mut self, nonce: u64, balance: U256) {
+        self.nonce = nonce;
+        self.balance = balance;
+    }
 }
