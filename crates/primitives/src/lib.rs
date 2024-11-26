@@ -9,5 +9,3 @@ pub use reth_primitives::{
     Account, Block, BlockBody, BlockWithSenders, Transaction, TransactionSigned,
     TransactionSignedEcRecovered, TransactionSignedNoHash,
 };
-
-// have only TxEip1559, and implement all the wrappers for it
