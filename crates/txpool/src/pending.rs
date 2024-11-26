@@ -28,10 +28,9 @@ impl PendingPool {
 
         let pending_tx = PendingTransaction::new(submission_id, tx, priority);
 
-        assert!(
-            self.tx_by_id
-                .insert(pending_tx.id(), pending_tx.clone())
-                .is_none(),
+        assert_eq!(
+            self.tx_by_id.insert(pending_tx.id(), pending_tx.clone()),
+            None,
             "PendingPool.tx_by_id should not receive duplicate tx request"
         );
         assert!(
