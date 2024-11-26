@@ -49,8 +49,8 @@ impl PendingPool {
         );
     }
 
-    pub fn _best_iter(&self) -> impl Iterator<Item = &Arc<PooledTransaction>> + '_ {
-        self.all_txs.iter().map(|tx| &tx.tx).rev()
+    pub fn _best_iter(&self) -> impl Iterator<Item = &PooledTransaction> + '_ {
+        self.all_txs.iter().rev().map(|tx| tx.tx.as_ref())
     }
 
     fn priority_by_tip(&self, tx: &PooledTransaction, base_fee: u128) -> u128 {
