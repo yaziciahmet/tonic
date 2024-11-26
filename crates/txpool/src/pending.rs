@@ -26,7 +26,7 @@ impl PendingPool {
         assert!(
             !self.contains(&tx.id()),
             "Transaction already exists.\nexisting = {:?}\nincoming = {:?}",
-            self.get(&tx.id()),
+            self.get(&tx.id()).unwrap(),
             tx,
         );
 
