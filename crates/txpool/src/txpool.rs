@@ -127,10 +127,10 @@ impl AllTransactions {
 
         let tx = Arc::new(tx);
 
-        let mut replaced_tx = None;
-        match self.txs.entry(tx.id()) {
+        let replaced_tx = match self.txs.entry(tx.id()) {
             Entry::Vacant(entry) => {
                 entry.insert((tx.clone(), subpool));
+                None
             }
             Entry::Occupied(mut entry) => {
                 let existing_tx = entry.get_mut();
@@ -141,9 +141,11 @@ impl AllTransactions {
                     return Err(AddTransactionError::ReplacementTxUnderpriced);
                 }
 
-                replaced_tx = Some(existing_tx.clone());
+                let replaced_tx = existing_tx.clone();
 
                 *existing_tx = (tx.clone(), subpool);
+
+                Some(replaced_tx)
             }
         };
 
