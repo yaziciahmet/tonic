@@ -4842,6 +4842,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic-consensus"
+version = "0.1.0"
+
+[[package]]
 name = "tonic-database"
 version = "0.1.0"
 dependencies = [
