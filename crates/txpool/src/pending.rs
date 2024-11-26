@@ -9,48 +9,42 @@ use crate::transaction::{PooledTransaction, TransactionId};
 pub struct PendingPool {
     submission_id: u64,
 
-    tx_by_id: BTreeMap<TransactionId, PendingTransaction>,
-    all_txs: BTreeSet<PendingTransaction>,
+    by_id: BTreeMap<TransactionId, PendingTransaction>,
+    all: BTreeSet<PendingTransaction>,
 }
 
 impl PendingPool {
     pub fn new() -> Self {
         Self {
             submission_id: 0,
-            tx_by_id: BTreeMap::new(),
-            all_txs: BTreeSet::new(),
+            by_id: BTreeMap::new(),
+            all: BTreeSet::new(),
         }
     }
 
     pub fn add_transaction(&mut self, tx: Arc<PooledTransaction>, base_fee: u128) {
+        assert!(
+            !self.contains(&tx.id()),
+            "Transaction already exists.\nexisting = {:?}\nincoming = {:?}",
+            self.get(&tx.id()),
+            tx,
+        );
+
         let submission_id = self.next_submission_id();
         let priority = self.priority_by_tip(&tx, base_fee);
 
         let pending_tx = PendingTransaction::new(submission_id, tx, priority);
 
-        assert_eq!(
-            self.tx_by_id.insert(pending_tx.id(), pending_tx.clone()),
-            None,
-            "PendingPool.tx_by_id should not receive duplicate tx request"
-        );
-        assert!(
-            self.all_txs.insert(pending_tx),
-            "PendingPool.all_txs should not receive duplicate tx request"
-        );
+        self.by_id.insert(pending_tx.id(), pending_tx.clone());
+        self.all.insert(pending_tx);
     }
 
     pub fn remove_transaction(&mut self, tx_id: &TransactionId) {
-        let removed_tx = self.tx_by_id.remove(tx_id).expect(
-            "PendingPool.tx_by_id should not receive remove tx request for non-existing tx",
-        );
-        assert!(
-            self.all_txs.remove(&removed_tx),
-            "PendingPool.all_txs should not receive remove tx request for non-existing tx",
-        );
-    }
-
-    pub fn _best_iter(&self) -> impl Iterator<Item = &PooledTransaction> + '_ {
-        self.all_txs.iter().rev().map(|tx| tx.tx.as_ref())
+        let removed_tx = self
+            .by_id
+            .remove(tx_id)
+            .unwrap_or_else(|| panic!("Transaction does not exist {:?}", tx_id));
+        self.all.remove(&removed_tx);
     }
 
     fn priority_by_tip(&self, tx: &PooledTransaction, base_fee: u128) -> u128 {
@@ -72,6 +66,14 @@ impl PendingPool {
         let id = self.submission_id;
         self.submission_id = self.submission_id.wrapping_add(1);
         id
+    }
+
+    fn contains(&self, tx_id: &TransactionId) -> bool {
+        self.by_id.contains_key(tx_id)
+    }
+
+    fn get(&self, tx_id: &TransactionId) -> Option<&PendingTransaction> {
+        self.by_id.get(tx_id)
     }
 }
 
