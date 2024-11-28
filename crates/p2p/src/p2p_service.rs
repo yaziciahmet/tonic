@@ -7,7 +7,7 @@ use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 use tokio::select;
 use tokio::sync::mpsc;
 use tonic_consensus_core::types::IBFTMessage;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
@@ -131,7 +131,7 @@ where
         }
     }
 
-    #[tracing::instrument(level = "debug", skip_all, fields (local_peer_id = %self.local_peer_id, address = %self.address.as_ref().unwrap()))]
+    #[instrument(level = "debug", skip_all, fields (local_peer_id = %self.local_peer_id, address = %self.address.as_ref().unwrap()))]
     pub async fn run(&mut self) {
         loop {
             select! {

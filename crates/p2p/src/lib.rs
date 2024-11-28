@@ -9,7 +9,7 @@ pub mod p2p_service;
 pub use config::*;
 pub use gossipsub::GossipMessage;
 use libp2p::multiaddr::Protocol;
-use libp2p::{Multiaddr, PeerId};
+pub use libp2p::{Multiaddr, PeerId};
 pub use p2p_proxy::*;
 pub use p2p_service::*;
 
