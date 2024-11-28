@@ -9,20 +9,21 @@ const CHANNEL_SIZE: usize = 1024;
 #[derive(Clone)]
 pub struct P2PServiceProxy {
     request_sender: mpsc::Sender<P2PRequest>,
-    dummy_broadcast: broadcast::Sender<IncomingDummyMessage>,
-    consensus_sender: mpsc::Sender<IncomingConsensusMessage>,
+    dummy_tx: broadcast::Sender<IncomingDummyMessage>,
+    // Consensus messages have only one receiver, hence mpsc instead of broadcast
+    consensus_tx: mpsc::Sender<IncomingConsensusMessage>,
 }
 
 impl P2PServiceProxy {
     pub fn new(
         request_sender: mpsc::Sender<P2PRequest>,
-        consensus_sender: mpsc::Sender<IncomingConsensusMessage>,
+        consensus_tx: mpsc::Sender<IncomingConsensusMessage>,
     ) -> Self {
-        let (dummy_broadcast, _) = broadcast::channel(CHANNEL_SIZE);
+        let (dummy_tx, _) = broadcast::channel(CHANNEL_SIZE);
         Self {
             request_sender,
-            dummy_broadcast,
-            consensus_sender,
+            dummy_tx,
+            consensus_tx,
         }
     }
 
@@ -33,18 +34,18 @@ impl P2PServiceProxy {
     }
 
     pub fn subscribe_dummy(&self) -> broadcast::Receiver<IncomingDummyMessage> {
-        self.dummy_broadcast.subscribe()
+        self.dummy_tx.subscribe()
     }
 }
 
 impl Broadcast for P2PServiceProxy {
     fn broadcast_dummy(&self, data: IncomingDummyMessage) -> anyhow::Result<()> {
-        self.dummy_broadcast.send(data)?;
+        self.dummy_tx.send(data)?;
         Ok(())
     }
 
     fn broadcast_consensus(&self, data: IncomingConsensusMessage) -> anyhow::Result<()> {
-        self.consensus_sender.blocking_send(data)?;
+        self.consensus_tx.blocking_send(data)?;
         Ok(())
     }
 }
@@ -57,10 +58,10 @@ pub fn build_proxy() -> (
     mpsc::Receiver<IncomingConsensusMessage>,
 ) {
     let (request_sender, request_receiver) = mpsc::channel(CHANNEL_SIZE);
-    let (consensus_sender, consensus_receiver) = mpsc::channel(CHANNEL_SIZE);
+    let (consensus_tx, consensus_rx) = mpsc::channel(CHANNEL_SIZE);
     (
-        P2PServiceProxy::new(request_sender, consensus_sender),
+        P2PServiceProxy::new(request_sender, consensus_tx),
         request_receiver,
-        consensus_receiver,
+        consensus_rx,
     )
 }
