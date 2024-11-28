@@ -2,6 +2,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::gossipsub::GossipMessage;
 use crate::p2p_service::{Broadcast, IncomingDummyMessage, P2PRequest};
+use crate::IncomingConsensusMessage;
 
 const CHANNEL_SIZE: usize = 1024;
 
@@ -9,19 +10,19 @@ const CHANNEL_SIZE: usize = 1024;
 pub struct P2PServiceProxy {
     request_sender: mpsc::Sender<P2PRequest>,
     dummy_broadcast: broadcast::Sender<IncomingDummyMessage>,
+    consensus_sender: mpsc::Sender<IncomingConsensusMessage>,
 }
 
 impl P2PServiceProxy {
-    pub fn new(request_sender: mpsc::Sender<P2PRequest>) -> Self {
-        assert!(
-            !request_sender.is_closed(),
-            "Received closed request sender channel"
-        );
-
+    pub fn new(
+        request_sender: mpsc::Sender<P2PRequest>,
+        consensus_sender: mpsc::Sender<IncomingConsensusMessage>,
+    ) -> Self {
         let (dummy_broadcast, _) = broadcast::channel(CHANNEL_SIZE);
         Self {
             request_sender,
             dummy_broadcast,
+            consensus_sender,
         }
     }
 
@@ -41,11 +42,25 @@ impl Broadcast for P2PServiceProxy {
         self.dummy_broadcast.send(data)?;
         Ok(())
     }
+
+    fn broadcast_consensus(&self, data: IncomingConsensusMessage) -> anyhow::Result<()> {
+        self.consensus_sender.blocking_send(data)?;
+        Ok(())
+    }
 }
 
 /// Builds proxy with a sender channel.
 /// Returns proxy and the receiver channel.
-pub fn build_proxy() -> (P2PServiceProxy, mpsc::Receiver<P2PRequest>) {
+pub fn build_proxy() -> (
+    P2PServiceProxy,
+    mpsc::Receiver<P2PRequest>,
+    mpsc::Receiver<IncomingConsensusMessage>,
+) {
     let (request_sender, request_receiver) = mpsc::channel(CHANNEL_SIZE);
-    (P2PServiceProxy::new(request_sender), request_receiver)
+    let (consensus_sender, consensus_receiver) = mpsc::channel(CHANNEL_SIZE);
+    (
+        P2PServiceProxy::new(request_sender, consensus_sender),
+        request_receiver,
+        consensus_receiver,
+    )
 }

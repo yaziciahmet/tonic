@@ -4842,8 +4842,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic-consensus"
+name = "tonic-consensus-core"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "tokio",
+ "tonic-primitives",
+ "tracing",
+]
+
+[[package]]
+name = "tonic-consensus-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "tokio",
+ "tonic-primitives",
+ "tracing",
+]
 
 [[package]]
 name = "tonic-database"
@@ -4865,6 +4883,7 @@ dependencies = [
  "sha2 0.10.8",
  "tokio",
  "tonic",
+ "tonic-consensus-core",
  "tracing",
 ]
 
@@ -4875,6 +4894,7 @@ dependencies = [
  "alloy-consensus",
  "alloy-eips",
  "alloy-primitives",
+ "borsh",
  "reth-primitives",
 ]
 

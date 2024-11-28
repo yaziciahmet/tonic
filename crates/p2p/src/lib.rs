@@ -42,13 +42,14 @@ mod tests {
         let key = Keypair::generate_ed25519();
         let config = Config {
             keypair: key.clone(),
+            is_validator: false,
             network_name: "testnet".to_owned(),
             tcp_port,
             connection_idle_timeout: None,
             bootstrap_nodes,
         };
 
-        let (p2p_proxy, request_receiver) = build_proxy();
+        let (p2p_proxy, request_receiver, _) = build_proxy();
         let mut p2p = P2PService::new(config, request_receiver, p2p_proxy.clone());
         p2p.listen().await;
 

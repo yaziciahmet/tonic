@@ -7,6 +7,8 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
+tonic-consensus-core = { workspace = true }
+
 anyhow = { workspace = true }
 borsh = { workspace = true }
 futures = { workspace = true }

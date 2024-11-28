@@ -1,5 +1,5 @@
 [package]
-name = "tonic-primitives"
+name = "tonic-consensus-engine"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
@@ -7,11 +7,12 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-alloy-consensus = { workspace = true }
-alloy-eips = { workspace = true }
-alloy-primitives = { workspace = true }
+tonic-primitives = { workspace = true }
+
+anyhow = { workspace = true }
 borsh = { workspace = true }
-reth-primitives = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
 
 [features]
 default = []

@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "bin/tonic",
-    "crates/consensus",
+    "crates/consensus/core",
+    "crates/consensus/engine",
     "crates/database",
     "crates/p2p",
     "crates/primitives",
@@ -20,7 +21,8 @@ repository = "https://github.com/yaziciahmet/tonic"
 [workspace.dependencies]
 # Tonic dependencies
 tonic = { path = "bin/tonic", default-features = false }
-tonic-consensus = { path = "crates/consensus", default-features = false }
+tonic-consensus-core = { path = "crates/consensus/core", default-features = false }
+tonic-consensus-engine = { path = "crates/consensus/engine", default-features = false }
 tonic-database = { path = "crates/database", default-features = false }
 tonic-p2p = { path = "crates/p2p", default-features = false }
 tonic-primitives = { path = "crates/primitives", default-features = false }

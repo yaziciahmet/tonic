@@ -8,6 +8,10 @@ pub struct Config {
     /// The keypair used for handshake during communication with other p2p nodes.
     pub keypair: Keypair,
 
+    /// Whether the current node is validator. Used for determining the
+    /// topics to subscribe, such as consensus topic.
+    pub is_validator: bool,
+
     /// Name of the Network
     pub network_name: String,
 
