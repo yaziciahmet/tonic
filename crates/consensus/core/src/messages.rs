@@ -1,7 +1,5 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    rc::Rc,
-};
+use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 use tokio::sync::broadcast;
 use tonic_primitives::Address;
@@ -11,8 +9,11 @@ use super::types::{
     RoundChangeMessageSigned, View,
 };
 
-const CHANNEL_SIZE: usize = 1024;
+const CHANNEL_SIZE: usize = 128;
 
+/// Container for consensus messages received by peers. Each message is
+/// guaranteed to have a valid signature, and the signer is a valid validator
+/// for the corresponding height. Also provides subscription capabilities.
 pub struct ConsensusMessages {
     /// map[height][round][sender] => messages
     by_height: BTreeMap<u64, BTreeMap<u32, HashMap<Address, SenderMessages>>>,
