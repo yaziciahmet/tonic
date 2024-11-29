@@ -63,7 +63,7 @@ impl IBFT {
     }
 
     async fn wait_for_rcc(&self, messages: &ConsensusMessages) {
-        let rx = messages.subscribe_round_change();
+        let _rx = messages.subscribe_round_change();
         todo!()
     }
 

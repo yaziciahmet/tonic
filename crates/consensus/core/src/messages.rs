@@ -5,8 +5,8 @@ use tokio::sync::broadcast;
 use tonic_primitives::Address;
 
 use super::types::{
-    CommitMessageSigned, IBFTMessage, PrepareMessageSigned, ProposalMessageSigned,
-    RoundChangeMessageSigned, View,
+    CommitMessageSigned, PrepareMessageSigned, ProposalMessageSigned, RoundChangeMessageSigned,
+    View,
 };
 
 const CHANNEL_SIZE: usize = 128;
@@ -40,19 +40,7 @@ impl ConsensusMessages {
         self.by_height = self.by_height.split_off(&height);
     }
 
-    /// Adds a message to the store
-    pub fn add_message(&mut self, message: IBFTMessage, sender: Address) {
-        match message {
-            IBFTMessage::Proposal(proposal) => self.add_proposal_message(proposal, sender),
-            IBFTMessage::Prepare(prepare) => self.add_prepare_message(prepare, sender),
-            IBFTMessage::Commit(commit) => self.add_commit_message(commit, sender),
-            IBFTMessage::RoundChange(round_change) => {
-                self.add_round_change_message(round_change, sender)
-            }
-        }
-    }
-
-    fn add_proposal_message(&mut self, proposal: ProposalMessageSigned, sender: Address) {
+    pub fn add_proposal_message(&mut self, proposal: ProposalMessageSigned, sender: Address) {
         let proposal = Rc::new(proposal);
 
         let messages = self.get_sender_messages(proposal.view, sender);
@@ -62,7 +50,7 @@ impl ConsensusMessages {
         let _ = self.proposal_tx.send(proposal);
     }
 
-    fn add_prepare_message(&mut self, prepare: PrepareMessageSigned, sender: Address) {
+    pub fn add_prepare_message(&mut self, prepare: PrepareMessageSigned, sender: Address) {
         let prepare = Rc::new(prepare);
 
         let messages = self.get_sender_messages(prepare.view, sender);
@@ -72,7 +60,7 @@ impl ConsensusMessages {
         let _ = self.prepare_tx.send(prepare);
     }
 
-    fn add_commit_message(&mut self, commit: CommitMessageSigned, sender: Address) {
+    pub fn add_commit_message(&mut self, commit: CommitMessageSigned, sender: Address) {
         let commit = Rc::new(commit);
 
         let messages = self.get_sender_messages(commit.view, sender);
@@ -82,7 +70,7 @@ impl ConsensusMessages {
         let _ = self.commit_tx.send(commit);
     }
 
-    fn add_round_change_message(
+    pub fn add_round_change_message(
         &mut self,
         round_change: RoundChangeMessageSigned,
         sender: Address,
