@@ -12,7 +12,7 @@ use super::types::{
 const CHANNEL_SIZE: usize = 128;
 
 /// Container for consensus messages received by peers. `ConsensusMessages` ensures that:
-/// - no duplicate messages from the same sender
+/// - no duplicate messages from the same sender for the same view; only the first is accepted, and the rest are discarded.
 ///
 /// Certain checks must be done before adding a message:
 /// - message has a valid signature
@@ -50,6 +50,11 @@ impl ConsensusMessages {
         let proposal = Rc::new(proposal);
 
         let messages = self.get_sender_messages(proposal.view, sender);
+        // return early if sender already sent a proposal for this view
+        if messages.proposal.is_some() {
+            return;
+        }
+
         messages.proposal = Some(proposal.clone());
 
         // only errors if there are no receivers
@@ -60,6 +65,11 @@ impl ConsensusMessages {
         let prepare = Rc::new(prepare);
 
         let messages = self.get_sender_messages(prepare.view, sender);
+        // return early if sender already sent a prepare for this view
+        if messages.prepare.is_some() {
+            return;
+        }
+
         messages.prepare = Some(prepare.clone());
 
         // only errors if there are no receivers
@@ -70,6 +80,11 @@ impl ConsensusMessages {
         let commit = Rc::new(commit);
 
         let messages = self.get_sender_messages(commit.view, sender);
+        // return early if sender already sent a commit for this view
+        if messages.commit.is_some() {
+            return;
+        }
+
         messages.commit = Some(commit.clone());
 
         // only errors if there are no receivers
@@ -84,6 +99,11 @@ impl ConsensusMessages {
         let round_change = Rc::new(round_change);
 
         let messages = self.get_sender_messages(round_change.view, sender);
+        // return early if sender already sent a round change for this view
+        if messages.round_change.is_some() {
+            return;
+        }
+
         messages.round_change = Some(round_change.clone());
 
         // only errors if there are no receivers
