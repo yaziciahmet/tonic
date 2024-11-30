@@ -53,7 +53,7 @@ impl ConsensusEngine {
     }
 
     async fn handle_consensus_message(
-        &mut self,
+        &self,
         message: IBFTMessage,
         height: u64,
     ) -> anyhow::Result<()> {

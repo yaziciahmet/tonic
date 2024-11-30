@@ -1,8 +1,9 @@
 use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
+use std::sync::Arc;
 
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tonic_primitives::Address;
 
 use super::types::{
@@ -21,12 +22,12 @@ const CHANNEL_SIZE: usize = 128;
 /// - if proposal, signer must be the proposer for the corresponding height and round
 ///
 /// Also provides subscription capabilities.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ConsensusMessages {
-    proposal_messages: ViewMap<Rc<ProposalMessageSigned>>,
-    prepare_messages: ViewSenderMap<Rc<PrepareMessageSigned>>,
-    commit_messages: ViewSenderMap<Rc<CommitMessageSigned>>,
-    round_change_messages: ViewSenderMap<Rc<RoundChangeMessageSigned>>,
+    proposal_messages: Arc<Mutex<ViewMap<Rc<ProposalMessageSigned>>>>,
+    prepare_messages: Arc<Mutex<ViewSenderMap<Rc<PrepareMessageSigned>>>>,
+    commit_messages: Arc<Mutex<ViewSenderMap<Rc<CommitMessageSigned>>>>,
+    round_change_messages: Arc<Mutex<ViewSenderMap<Rc<RoundChangeMessageSigned>>>>,
 
     proposal_tx: broadcast::Sender<Rc<ProposalMessageSigned>>,
     prepare_tx: broadcast::Sender<Rc<PrepareMessageSigned>>,
@@ -37,10 +38,10 @@ pub struct ConsensusMessages {
 impl ConsensusMessages {
     pub fn new() -> Self {
         Self {
-            proposal_messages: ViewMap::new(),
-            prepare_messages: ViewSenderMap::new(),
-            commit_messages: ViewSenderMap::new(),
-            round_change_messages: ViewSenderMap::new(),
+            proposal_messages: Arc::new(Mutex::new(ViewMap::new())),
+            prepare_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
+            commit_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
+            round_change_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
             proposal_tx: broadcast::channel(CHANNEL_SIZE).0,
             prepare_tx: broadcast::channel(CHANNEL_SIZE).0,
             commit_tx: broadcast::channel(CHANNEL_SIZE).0,
@@ -49,16 +50,29 @@ impl ConsensusMessages {
     }
 
     /// Prunes messages less than height
-    pub async fn prune(&mut self, height: u64) {
-        self.proposal_messages.prune(height);
-        self.prepare_messages.prune(height);
-        self.commit_messages.prune(height);
-        self.round_change_messages.prune(height);
+    pub async fn prune(&self, height: u64) {
+        // Prune proposal
+        let mut proposal_messages = self.proposal_messages.lock().await;
+        proposal_messages.prune(height);
+        drop(proposal_messages);
+        // Prune prepare
+        let mut prepare_messages = self.prepare_messages.lock().await;
+        prepare_messages.prune(height);
+        drop(prepare_messages);
+        // Prune commit
+        let mut commit_messages = self.commit_messages.lock().await;
+        commit_messages.prune(height);
+        drop(commit_messages);
+        // Prune round changes
+        let mut round_change_messages = self.round_change_messages.lock().await;
+        round_change_messages.prune(height);
+        drop(round_change_messages);
     }
 
     /// Adds a proposal message if not already exists for the view, and broadcasts it.
-    pub async fn add_proposal_message(&mut self, proposal: ProposalMessageSigned) {
-        let entry = self.proposal_messages.view_entry(proposal.view);
+    pub async fn add_proposal_message(&self, proposal: ProposalMessageSigned) {
+        let mut proposal_messages = self.proposal_messages.lock().await;
+        let entry = proposal_messages.view_entry(proposal.view);
         if let btree_map::Entry::Vacant(entry) = entry {
             let proposal = Rc::new(proposal);
 
@@ -69,8 +83,9 @@ impl ConsensusMessages {
     }
 
     /// Adds a prepare message if not already exists for the view and sender, and broadcasts it.
-    pub async fn add_prepare_message(&mut self, prepare: PrepareMessageSigned, sender: Address) {
-        let entry = self.prepare_messages.sender_entry(prepare.view, sender);
+    pub async fn add_prepare_message(&self, prepare: PrepareMessageSigned, sender: Address) {
+        let mut prepare_messages = self.prepare_messages.lock().await;
+        let entry = prepare_messages.sender_entry(prepare.view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
             let prepare = Rc::new(prepare);
 
@@ -81,8 +96,9 @@ impl ConsensusMessages {
     }
 
     /// Adds a commit message if not already exists for the view and sender, and broadcasts it.
-    pub async fn add_commit_message(&mut self, commit: CommitMessageSigned, sender: Address) {
-        let entry = self.commit_messages.sender_entry(commit.view, sender);
+    pub async fn add_commit_message(&self, commit: CommitMessageSigned, sender: Address) {
+        let mut commit_messages = self.commit_messages.lock().await;
+        let entry = commit_messages.sender_entry(commit.view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
             let commit = Rc::new(commit);
 
@@ -92,14 +108,14 @@ impl ConsensusMessages {
         }
     }
 
+    /// Adds a round change message if not already exists for the view and sender, and broadcasts it.
     pub async fn add_round_change_message(
-        &mut self,
+        &self,
         round_change: RoundChangeMessageSigned,
         sender: Address,
     ) {
-        let entry = self
-            .round_change_messages
-            .sender_entry(round_change.view, sender);
+        let mut round_change_messages = self.round_change_messages.lock().await;
+        let entry = round_change_messages.sender_entry(round_change.view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
             let round_change = Rc::new(round_change);
 
@@ -126,14 +142,15 @@ impl ConsensusMessages {
     }
 
     pub async fn get_valid_round_change_messages<F>(
-        &mut self,
+        &self,
         view: View,
         validate_fn: F,
     ) -> Vec<Rc<RoundChangeMessageSigned>>
     where
         F: Fn(&RoundChangeMessageSigned) -> bool,
     {
-        let messages = self.round_change_messages.view_entry(view).or_default();
+        let mut round_change_messages = self.round_change_messages.lock().await;
+        let messages = round_change_messages.view_entry(view).or_default();
 
         // Prune invalid messages
         messages.retain(|_, round_change| validate_fn(round_change));
