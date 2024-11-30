@@ -11,9 +11,15 @@ use super::types::{
 
 const CHANNEL_SIZE: usize = 128;
 
-/// Container for consensus messages received by peers. Each message is
-/// guaranteed to have a valid signature, and the signer is a valid validator
-/// for the corresponding height. Also provides subscription capabilities.
+/// Container for consensus messages received by peers. `ConsensusMessages` ensures that:
+/// - no duplicate messages from the same sender
+///
+/// Certain checks must be done before adding a message:
+/// - message has a valid signature
+/// - message signer is a valid validator for the corresponding height 
+/// - if proposal, signer must be the proposer for the corresponding height and round
+/// 
+/// Also provides subscription capabilities.
 pub struct ConsensusMessages {
     /// map[height][round][sender] => messages
     by_height: BTreeMap<u64, BTreeMap<u32, HashMap<Address, SenderMessages>>>,

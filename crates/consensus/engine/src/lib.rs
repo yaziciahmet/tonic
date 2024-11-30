@@ -3,7 +3,7 @@ use tokio::select;
 use tokio::sync::{mpsc, oneshot};
 use tonic_consensus_core::ibft::IBFT;
 use tonic_consensus_core::messages::ConsensusMessages;
-use tonic_consensus_core::types::IBFTMessage;
+use tonic_consensus_core::types::{IBFTMessage, View};
 use tonic_p2p::IncomingConsensusMessage;
 use tonic_primitives::Address;
 use tracing::{info, warn};
@@ -60,44 +60,44 @@ impl ConsensusEngine {
         match message {
             IBFTMessage::Proposal(proposal) => {
                 let sender = proposal.recover_signer()?;
-                if !self.is_validator(&sender) {
-                    return Err(anyhow!("Message sender is not validator"));
-                }
                 if proposal.view.height < height {
-                    return Err(anyhow!("Message height is lower than the current state"));
+                    return Ok(());
+                }
+                if !self.is_proposer(&sender, proposal.view) {
+                    return Err(anyhow!("Received proposal from non-proposer"));
                 }
 
                 self.messages.add_proposal_message(proposal, sender);
             }
             IBFTMessage::Prepare(prepare) => {
                 let sender = prepare.recover_signer()?;
+                if prepare.view.height < height {
+                    return Ok(());
+                }
                 if !self.is_validator(&sender) {
                     return Err(anyhow!("Message sender is not validator"));
-                }
-                if prepare.view.height < height {
-                    return Err(anyhow!("Message height is lower than the current state"));
                 }
 
                 self.messages.add_prepare_message(prepare, sender);
             }
             IBFTMessage::Commit(commit) => {
                 let sender = commit.recover_signer()?;
+                if commit.view.height < height {
+                    return Ok(());
+                }
                 if !self.is_validator(&sender) {
                     return Err(anyhow!("Message sender is not validator"));
-                }
-                if commit.view.height < height {
-                    return Err(anyhow!("Message height is lower than the current state"));
                 }
 
                 self.messages.add_commit_message(commit, sender);
             }
             IBFTMessage::RoundChange(round_change) => {
                 let sender = round_change.recover_signer()?;
+                if round_change.view.height < height {
+                    return Ok(());
+                }
                 if !self.is_validator(&sender) {
                     return Err(anyhow!("Message sender is not validator"));
-                }
-                if round_change.view.height < height {
-                    return Err(anyhow!("Message height is lower than the current state"));
                 }
 
                 self.messages.add_round_change_message(round_change, sender);
@@ -111,8 +111,12 @@ impl ConsensusEngine {
         self.validators.contains(address)
     }
 
+    fn is_proposer(&self, address: &Address, _view: View) -> bool {
+        self.is_validator(address)
+    }
+
     // IBFT 2.0 quorum number is ceil(2n/3)
-    fn quorum(&self) -> usize {
+    fn _quorum(&self) -> usize {
         (self.validators.len() as f64 * 2.0 / 3.0).ceil() as usize
     }
 }
