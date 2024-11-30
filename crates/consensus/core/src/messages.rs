@@ -16,9 +16,9 @@ const CHANNEL_SIZE: usize = 128;
 ///
 /// Certain checks must be done before adding a message:
 /// - message has a valid signature
-/// - message signer is a valid validator for the corresponding height 
+/// - message signer is a valid validator for the corresponding height
 /// - if proposal, signer must be the proposer for the corresponding height and round
-/// 
+///
 /// Also provides subscription capabilities.
 pub struct ConsensusMessages {
     /// map[height][round][sender] => messages
