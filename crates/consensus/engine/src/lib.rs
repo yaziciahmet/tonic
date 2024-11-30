@@ -1,5 +1,7 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
 use anyhow::anyhow;
-use tokio::select;
 use tokio::sync::{mpsc, oneshot};
 use tonic_consensus_core::ibft::IBFT;
 use tonic_consensus_core::messages::ConsensusMessages;
@@ -8,59 +10,64 @@ use tonic_p2p::IncomingConsensusMessage;
 use tonic_primitives::Address;
 use tracing::{info, warn};
 
+#[derive(Clone, Debug)]
 pub struct ConsensusEngine {
-    p2p_consensus_rx: mpsc::Receiver<IncomingConsensusMessage>,
-    ibft: IBFT,
+    height: Arc<AtomicU64>,
     messages: ConsensusMessages,
     validators: Vec<Address>,
 }
 
 impl ConsensusEngine {
-    pub fn new(
-        p2p_consensus_rx: mpsc::Receiver<IncomingConsensusMessage>,
-        validators: Vec<Address>,
-    ) -> Self {
-        let ibft = IBFT::new();
-        let messages = ConsensusMessages::new();
-
+    pub fn new(validators: Vec<Address>) -> Self {
         Self {
-            p2p_consensus_rx,
-            ibft,
-            messages,
+            height: Arc::new(AtomicU64::new(0)),
+            messages: ConsensusMessages::new(),
             validators,
         }
     }
 
-    pub async fn run(&mut self) {
-        let mut height = 0;
-        loop {
-            let (_cancel_tx, cancel_rx) = oneshot::channel();
-            let ibft_result = self.ibft.run(height, &self.messages, cancel_rx);
+    pub async fn run(&self, p2p_consensus_rx: mpsc::Receiver<IncomingConsensusMessage>) {
+        self.spawn_p2p_message_handler(p2p_consensus_rx);
 
-            select! {
-                Some((message, peer_id)) = self.p2p_consensus_rx.recv() => {
-                    if let Err(e) = self.handle_consensus_message(message, height).await {
-                        warn!("Invalid consensus message by peer {peer_id}: {e}");
-                    }
-                }
-                _ = ibft_result => {
-                    info!("Finished consensus for height {height}");
-                    height += 1;
-                    self.messages.prune(height).await;
-                }
-            }
+        let ibft = IBFT::new();
+        loop {
+            let height = self.height();
+
+            let (_cancel_tx, cancel_rx) = oneshot::channel();
+            let _ibft_result = ibft.run(height, &self.messages, cancel_rx).await;
+
+            info!("Finished consensus for height {height}");
+
+            self.messages.prune(height).await;
+
+            self.height.fetch_add(1, Ordering::Relaxed);
         }
     }
 
-    async fn handle_consensus_message(
+    fn spawn_p2p_message_handler(
         &self,
-        message: IBFTMessage,
-        height: u64,
-    ) -> anyhow::Result<()> {
+        mut p2p_consensus_rx: mpsc::Receiver<IncomingConsensusMessage>,
+    ) {
+        let engine = self.clone();
+
+        tokio::spawn(async move {
+            loop {
+                let (message, peer_id) = p2p_consensus_rx
+                    .recv()
+                    .await
+                    .expect("P2P consensus channel should never be closed");
+                if let Err(e) = engine.handle_consensus_message(message).await {
+                    warn!("Invalid consensus message by peer {peer_id}: {e}");
+                }
+            }
+        });
+    }
+
+    async fn handle_consensus_message(&self, message: IBFTMessage) -> anyhow::Result<()> {
         match message {
             IBFTMessage::Proposal(proposal) => {
                 let sender = proposal.recover_signer()?;
-                if proposal.view.height < height {
+                if proposal.view.height < self.height() {
                     return Ok(());
                 }
                 if !self.is_proposer(&sender, proposal.view) {
@@ -71,7 +78,7 @@ impl ConsensusEngine {
             }
             IBFTMessage::Prepare(prepare) => {
                 let sender = prepare.recover_signer()?;
-                if prepare.view.height < height {
+                if prepare.view.height < self.height() {
                     return Ok(());
                 }
                 if !self.is_validator(&sender) {
@@ -82,7 +89,7 @@ impl ConsensusEngine {
             }
             IBFTMessage::Commit(commit) => {
                 let sender = commit.recover_signer()?;
-                if commit.view.height < height {
+                if commit.view.height < self.height() {
                     return Ok(());
                 }
                 if !self.is_validator(&sender) {
@@ -93,7 +100,7 @@ impl ConsensusEngine {
             }
             IBFTMessage::RoundChange(round_change) => {
                 let sender = round_change.recover_signer()?;
-                if round_change.view.height < height {
+                if round_change.view.height < self.height() {
                     return Ok(());
                 }
                 if !self.is_validator(&sender) {
@@ -120,5 +127,9 @@ impl ConsensusEngine {
     // IBFT 2.0 quorum number is ceil(2n/3)
     fn _quorum(&self) -> usize {
         (self.validators.len() as f64 * 2.0 / 3.0).ceil() as usize
+    }
+
+    fn height(&self) -> u64 {
+        self.height.load(Ordering::Relaxed)
     }
 }

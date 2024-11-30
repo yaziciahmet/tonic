@@ -1,6 +1,5 @@
 use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, Mutex};
@@ -24,15 +23,15 @@ const CHANNEL_SIZE: usize = 128;
 /// Also provides subscription capabilities.
 #[derive(Clone, Debug)]
 pub struct ConsensusMessages {
-    proposal_messages: Arc<Mutex<ViewMap<Rc<ProposalMessageSigned>>>>,
-    prepare_messages: Arc<Mutex<ViewSenderMap<Rc<PrepareMessageSigned>>>>,
-    commit_messages: Arc<Mutex<ViewSenderMap<Rc<CommitMessageSigned>>>>,
-    round_change_messages: Arc<Mutex<ViewSenderMap<Rc<RoundChangeMessageSigned>>>>,
+    proposal_messages: Arc<Mutex<ViewMap<Arc<ProposalMessageSigned>>>>,
+    prepare_messages: Arc<Mutex<ViewSenderMap<Arc<PrepareMessageSigned>>>>,
+    commit_messages: Arc<Mutex<ViewSenderMap<Arc<CommitMessageSigned>>>>,
+    round_change_messages: Arc<Mutex<ViewSenderMap<Arc<RoundChangeMessageSigned>>>>,
 
-    proposal_tx: broadcast::Sender<Rc<ProposalMessageSigned>>,
-    prepare_tx: broadcast::Sender<Rc<PrepareMessageSigned>>,
-    commit_tx: broadcast::Sender<Rc<CommitMessageSigned>>,
-    round_change_tx: broadcast::Sender<Rc<RoundChangeMessageSigned>>,
+    proposal_tx: broadcast::Sender<Arc<ProposalMessageSigned>>,
+    prepare_tx: broadcast::Sender<Arc<PrepareMessageSigned>>,
+    commit_tx: broadcast::Sender<Arc<CommitMessageSigned>>,
+    round_change_tx: broadcast::Sender<Arc<RoundChangeMessageSigned>>,
 }
 
 impl ConsensusMessages {
@@ -74,7 +73,7 @@ impl ConsensusMessages {
         let mut proposal_messages = self.proposal_messages.lock().await;
         let entry = proposal_messages.view_entry(proposal.view);
         if let btree_map::Entry::Vacant(entry) = entry {
-            let proposal = Rc::new(proposal);
+            let proposal = Arc::new(proposal);
 
             entry.insert(proposal.clone());
 
@@ -87,7 +86,7 @@ impl ConsensusMessages {
         let mut prepare_messages = self.prepare_messages.lock().await;
         let entry = prepare_messages.sender_entry(prepare.view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            let prepare = Rc::new(prepare);
+            let prepare = Arc::new(prepare);
 
             entry.insert(prepare.clone());
 
@@ -100,7 +99,7 @@ impl ConsensusMessages {
         let mut commit_messages = self.commit_messages.lock().await;
         let entry = commit_messages.sender_entry(commit.view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            let commit = Rc::new(commit);
+            let commit = Arc::new(commit);
 
             entry.insert(commit.clone());
 
@@ -117,7 +116,7 @@ impl ConsensusMessages {
         let mut round_change_messages = self.round_change_messages.lock().await;
         let entry = round_change_messages.sender_entry(round_change.view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            let round_change = Rc::new(round_change);
+            let round_change = Arc::new(round_change);
 
             entry.insert(round_change.clone());
 
@@ -125,19 +124,19 @@ impl ConsensusMessages {
         }
     }
 
-    pub fn subscribe_proposal(&self) -> broadcast::Receiver<Rc<ProposalMessageSigned>> {
+    pub fn subscribe_proposal(&self) -> broadcast::Receiver<Arc<ProposalMessageSigned>> {
         self.proposal_tx.subscribe()
     }
 
-    pub fn subscribe_prepare(&self) -> broadcast::Receiver<Rc<PrepareMessageSigned>> {
+    pub fn subscribe_prepare(&self) -> broadcast::Receiver<Arc<PrepareMessageSigned>> {
         self.prepare_tx.subscribe()
     }
 
-    pub fn subscribe_commit(&self) -> broadcast::Receiver<Rc<CommitMessageSigned>> {
+    pub fn subscribe_commit(&self) -> broadcast::Receiver<Arc<CommitMessageSigned>> {
         self.commit_tx.subscribe()
     }
 
-    pub fn subscribe_round_change(&self) -> broadcast::Receiver<Rc<RoundChangeMessageSigned>> {
+    pub fn subscribe_round_change(&self) -> broadcast::Receiver<Arc<RoundChangeMessageSigned>> {
         self.round_change_tx.subscribe()
     }
 
@@ -145,7 +144,7 @@ impl ConsensusMessages {
         &self,
         view: View,
         validate_fn: F,
-    ) -> Vec<Rc<RoundChangeMessageSigned>>
+    ) -> Vec<Arc<RoundChangeMessageSigned>>
     where
         F: Fn(&RoundChangeMessageSigned) -> bool,
     {
