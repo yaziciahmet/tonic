@@ -39,7 +39,7 @@ impl ConsensusEngine {
 
             select! {
                 Some((message, peer_id)) = self.p2p_consensus_rx.recv() => {
-                    if let Err(e) = self.handle_consensus_message(message, height).await {
+                    if let Err(e) = self.handle_consensus_message(message, height) {
                         warn!("Invalid consensus message by peer {peer_id}: {e}");
                     }
                 }
@@ -52,7 +52,7 @@ impl ConsensusEngine {
         }
     }
 
-    async fn handle_consensus_message(
+    fn handle_consensus_message(
         &mut self,
         message: IBFTMessage,
         height: u64,
@@ -78,7 +78,7 @@ impl ConsensusEngine {
                     return Err(anyhow!("Message height is lower than the current state"));
                 }
 
-                self.messages.add_prepare_message(prepare, sender)
+                self.messages.add_prepare_message(prepare, sender);
             }
             IBFTMessage::Commit(commit) => {
                 let sender = commit.recover_signer()?;
@@ -89,7 +89,7 @@ impl ConsensusEngine {
                     return Err(anyhow!("Message height is lower than the current state"));
                 }
 
-                self.messages.add_commit_message(commit, sender)
+                self.messages.add_commit_message(commit, sender);
             }
             IBFTMessage::RoundChange(round_change) => {
                 let sender = round_change.recover_signer()?;
@@ -100,7 +100,7 @@ impl ConsensusEngine {
                     return Err(anyhow!("Message height is lower than the current state"));
                 }
 
-                self.messages.add_round_change_message(round_change, sender)
+                self.messages.add_round_change_message(round_change, sender);
             }
         };
 
