@@ -66,10 +66,11 @@ impl ConsensusEngine {
     async fn handle_consensus_message(&self, message: IBFTMessage) -> anyhow::Result<()> {
         match message {
             IBFTMessage::Proposal(proposal) => {
-                let sender = proposal.recover_signer()?;
                 if proposal.view.height < self.height() {
                     return Ok(());
                 }
+
+                let sender = proposal.recover_signer()?;
                 if !self.is_proposer(&sender, proposal.view) {
                     return Err(anyhow!("Received proposal from non-proposer"));
                 }
@@ -77,10 +78,11 @@ impl ConsensusEngine {
                 self.messages.add_proposal_message(proposal).await;
             }
             IBFTMessage::Prepare(prepare) => {
-                let sender = prepare.recover_signer()?;
                 if prepare.view.height < self.height() {
                     return Ok(());
                 }
+
+                let sender = prepare.recover_signer()?;
                 if !self.is_validator(&sender) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
@@ -88,10 +90,11 @@ impl ConsensusEngine {
                 self.messages.add_prepare_message(prepare, sender).await;
             }
             IBFTMessage::Commit(commit) => {
-                let sender = commit.recover_signer()?;
                 if commit.view.height < self.height() {
                     return Ok(());
                 }
+
+                let sender = commit.recover_signer()?;
                 if !self.is_validator(&sender) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
@@ -99,10 +102,11 @@ impl ConsensusEngine {
                 self.messages.add_commit_message(commit, sender).await;
             }
             IBFTMessage::RoundChange(round_change) => {
-                let sender = round_change.recover_signer()?;
                 if round_change.view.height < self.height() {
                     return Ok(());
                 }
+
+                let sender = round_change.recover_signer()?;
                 if !self.is_validator(&sender) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
