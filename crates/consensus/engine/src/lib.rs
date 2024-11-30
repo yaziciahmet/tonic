@@ -67,7 +67,7 @@ impl ConsensusEngine {
                     return Err(anyhow!("Received proposal from non-proposer"));
                 }
 
-                self.messages.add_proposal_message(proposal, sender).await;
+                self.messages.add_proposal_message(proposal).await;
             }
             IBFTMessage::Prepare(prepare) => {
                 let sender = prepare.recover_signer()?;

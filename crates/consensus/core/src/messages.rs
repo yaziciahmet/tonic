@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use tokio::sync::broadcast;
@@ -20,9 +21,12 @@ const CHANNEL_SIZE: usize = 128;
 /// - if proposal, signer must be the proposer for the corresponding height and round
 ///
 /// Also provides subscription capabilities.
+#[derive(Debug)]
 pub struct ConsensusMessages {
-    /// map[height][round][sender] => messages
-    by_height: BTreeMap<u64, BTreeMap<u32, HashMap<Address, SenderMessages>>>,
+    proposal_messages: ViewMap<Rc<ProposalMessageSigned>>,
+    prepare_messages: ViewSenderMap<Rc<PrepareMessageSigned>>,
+    commit_messages: ViewSenderMap<Rc<CommitMessageSigned>>,
+    round_change_messages: ViewSenderMap<Rc<RoundChangeMessageSigned>>,
 
     proposal_tx: broadcast::Sender<Rc<ProposalMessageSigned>>,
     prepare_tx: broadcast::Sender<Rc<PrepareMessageSigned>>,
@@ -33,7 +37,10 @@ pub struct ConsensusMessages {
 impl ConsensusMessages {
     pub fn new() -> Self {
         Self {
-            by_height: BTreeMap::new(),
+            proposal_messages: ViewMap::new(),
+            prepare_messages: ViewSenderMap::new(),
+            commit_messages: ViewSenderMap::new(),
+            round_change_messages: ViewSenderMap::new(),
             proposal_tx: broadcast::channel(CHANNEL_SIZE).0,
             prepare_tx: broadcast::channel(CHANNEL_SIZE).0,
             commit_tx: broadcast::channel(CHANNEL_SIZE).0,
@@ -43,52 +50,46 @@ impl ConsensusMessages {
 
     /// Prunes messages less than height
     pub async fn prune(&mut self, height: u64) {
-        self.by_height = self.by_height.split_off(&height);
+        self.proposal_messages.prune(height);
+        self.prepare_messages.prune(height);
+        self.commit_messages.prune(height);
+        self.round_change_messages.prune(height);
     }
 
-    pub async fn add_proposal_message(&mut self, proposal: ProposalMessageSigned, sender: Address) {
-        let proposal = Rc::new(proposal);
+    /// Adds a proposal message if not already exists for the view, and broadcasts it.
+    pub async fn add_proposal_message(&mut self, proposal: ProposalMessageSigned) {
+        let entry = self.proposal_messages.view_entry(proposal.view);
+        if let btree_map::Entry::Vacant(entry) = entry {
+            let proposal = Rc::new(proposal);
 
-        let messages = self.get_sender_messages(proposal.view, sender);
-        // return early if sender already sent a proposal for this view
-        if messages.proposal.is_some() {
-            return;
+            entry.insert(proposal.clone());
+
+            let _ = self.proposal_tx.send(proposal);
         }
-
-        messages.proposal = Some(proposal.clone());
-
-        // only errors if there are no receivers
-        let _ = self.proposal_tx.send(proposal);
     }
 
+    /// Adds a prepare message if not already exists for the view and sender, and broadcasts it.
     pub async fn add_prepare_message(&mut self, prepare: PrepareMessageSigned, sender: Address) {
-        let prepare = Rc::new(prepare);
+        let entry = self.prepare_messages.sender_entry(prepare.view, sender);
+        if let hash_map::Entry::Vacant(entry) = entry {
+            let prepare = Rc::new(prepare);
 
-        let messages = self.get_sender_messages(prepare.view, sender);
-        // return early if sender already sent a prepare for this view
-        if messages.prepare.is_some() {
-            return;
+            entry.insert(prepare.clone());
+
+            let _ = self.prepare_tx.send(prepare);
         }
-
-        messages.prepare = Some(prepare.clone());
-
-        // only errors if there are no receivers
-        let _ = self.prepare_tx.send(prepare);
     }
 
+    /// Adds a commit message if not already exists for the view and sender, and broadcasts it.
     pub async fn add_commit_message(&mut self, commit: CommitMessageSigned, sender: Address) {
-        let commit = Rc::new(commit);
+        let entry = self.commit_messages.sender_entry(commit.view, sender);
+        if let hash_map::Entry::Vacant(entry) = entry {
+            let commit = Rc::new(commit);
 
-        let messages = self.get_sender_messages(commit.view, sender);
-        // return early if sender already sent a commit for this view
-        if messages.commit.is_some() {
-            return;
+            entry.insert(commit.clone());
+
+            let _ = self.commit_tx.send(commit);
         }
-
-        messages.commit = Some(commit.clone());
-
-        // only errors if there are no receivers
-        let _ = self.commit_tx.send(commit);
     }
 
     pub async fn add_round_change_message(
@@ -96,18 +97,16 @@ impl ConsensusMessages {
         round_change: RoundChangeMessageSigned,
         sender: Address,
     ) {
-        let round_change = Rc::new(round_change);
+        let entry = self
+            .round_change_messages
+            .sender_entry(round_change.view, sender);
+        if let hash_map::Entry::Vacant(entry) = entry {
+            let round_change = Rc::new(round_change);
 
-        let messages = self.get_sender_messages(round_change.view, sender);
-        // return early if sender already sent a round change for this view
-        if messages.round_change.is_some() {
-            return;
+            entry.insert(round_change.clone());
+
+            let _ = self.round_change_tx.send(round_change);
         }
-
-        messages.round_change = Some(round_change.clone());
-
-        // only errors if there are no receivers
-        let _ = self.round_change_tx.send(round_change);
     }
 
     pub fn subscribe_proposal(&self) -> broadcast::Receiver<Rc<ProposalMessageSigned>> {
@@ -134,42 +133,56 @@ impl ConsensusMessages {
     where
         F: Fn(&RoundChangeMessageSigned) -> bool,
     {
-        let by_sender = self.get_view_messages(view);
+        let messages = self.round_change_messages.view_entry(view).or_default();
 
-        let mut valid_messages = vec![];
-        for (_, messages) in by_sender.iter_mut() {
-            let Some(round_change) = messages.round_change.as_ref() else {
-                continue;
-            };
+        // Prune invalid messages
+        messages.retain(|_, round_change| validate_fn(round_change));
 
-            if validate_fn(round_change) {
-                valid_messages.push(round_change.clone());
-            } else {
-                // prune if invalid
-                messages.round_change = None;
-            }
-        }
-
-        valid_messages
-    }
-
-    fn get_sender_messages(&mut self, view: View, sender: Address) -> &mut SenderMessages {
-        self.get_view_messages(view).entry(sender).or_default()
-    }
-
-    fn get_view_messages(&mut self, view: View) -> &mut HashMap<Address, SenderMessages> {
-        self.by_height
-            .entry(view.height)
-            .or_insert_with(BTreeMap::new)
-            .entry(view.round)
-            .or_insert_with(HashMap::new)
+        messages.values().cloned().collect()
     }
 }
 
-#[derive(Debug, Default)]
-struct SenderMessages {
-    proposal: Option<Rc<ProposalMessageSigned>>,
-    prepare: Option<Rc<PrepareMessageSigned>>,
-    commit: Option<Rc<CommitMessageSigned>>,
-    round_change: Option<Rc<RoundChangeMessageSigned>>,
+#[derive(Debug)]
+struct ViewSenderMap<T>(ViewMap<HashMap<Address, T>>);
+
+impl<T> Deref for ViewSenderMap<T> {
+    type Target = ViewMap<HashMap<Address, T>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for ViewSenderMap<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<T> ViewSenderMap<T> {
+    fn new() -> Self {
+        Self(ViewMap::new())
+    }
+
+    fn sender_entry(&mut self, view: View, sender: Address) -> hash_map::Entry<'_, Address, T> {
+        self.view_entry(view).or_default().entry(sender)
+    }
+}
+
+#[derive(Debug)]
+struct ViewMap<T>(BTreeMap<u64, BTreeMap<u32, T>>);
+
+impl<T> ViewMap<T> {
+    fn new() -> Self {
+        Self(Default::default())
+    }
+
+    // Prune messages less than height
+    fn prune(&mut self, height: u64) {
+        self.0 = self.0.split_off(&height);
+    }
+
+    fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u32, T> {
+        self.0.entry(view.height).or_default().entry(view.round)
+    }
 }
