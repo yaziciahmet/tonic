@@ -42,11 +42,11 @@ impl ConsensusMessages {
     }
 
     /// Prunes messages less than height
-    pub fn prune(&mut self, height: u64) {
+    pub async fn prune(&mut self, height: u64) {
         self.by_height = self.by_height.split_off(&height);
     }
 
-    pub fn add_proposal_message(&mut self, proposal: ProposalMessageSigned, sender: Address) {
+    pub async fn add_proposal_message(&mut self, proposal: ProposalMessageSigned, sender: Address) {
         let proposal = Rc::new(proposal);
 
         let messages = self.get_sender_messages(proposal.view, sender);
@@ -61,7 +61,7 @@ impl ConsensusMessages {
         let _ = self.proposal_tx.send(proposal);
     }
 
-    pub fn add_prepare_message(&mut self, prepare: PrepareMessageSigned, sender: Address) {
+    pub async fn add_prepare_message(&mut self, prepare: PrepareMessageSigned, sender: Address) {
         let prepare = Rc::new(prepare);
 
         let messages = self.get_sender_messages(prepare.view, sender);
@@ -76,7 +76,7 @@ impl ConsensusMessages {
         let _ = self.prepare_tx.send(prepare);
     }
 
-    pub fn add_commit_message(&mut self, commit: CommitMessageSigned, sender: Address) {
+    pub async fn add_commit_message(&mut self, commit: CommitMessageSigned, sender: Address) {
         let commit = Rc::new(commit);
 
         let messages = self.get_sender_messages(commit.view, sender);
@@ -91,7 +91,7 @@ impl ConsensusMessages {
         let _ = self.commit_tx.send(commit);
     }
 
-    pub fn add_round_change_message(
+    pub async fn add_round_change_message(
         &mut self,
         round_change: RoundChangeMessageSigned,
         sender: Address,
@@ -126,7 +126,7 @@ impl ConsensusMessages {
         self.round_change_tx.subscribe()
     }
 
-    pub fn get_valid_round_change_messages<F>(
+    pub async fn get_valid_round_change_messages<F>(
         &mut self,
         view: View,
         validate_fn: F,
