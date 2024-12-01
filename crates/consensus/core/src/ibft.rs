@@ -42,18 +42,19 @@ impl IBFT {
             let finalized_block = self.run_state_transition(&mut state);
 
             select! {
-                _ = finalized_block => {}
-                _ = rcc => {}
-                _ = future_proposal => {}
+                biased;
+                _ = &mut cancel => {
+                    info!("Received cancel signal, stopping consensus...");
+                    return;
+                }
                 _ = timeout => {
                     info!("Round timeout");
                     state.move_round(view.round + 1);
                     // TODO: generate round change message
                 }
-                _ = &mut cancel => {
-                    info!("Received cancel signal, stopping consensus...");
-                    return;
-                }
+                _ = finalized_block => {}
+                _ = future_proposal => {}
+                _ = rcc => {}
             }
         }
     }
