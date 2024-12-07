@@ -1,7 +1,8 @@
 use std::ops::Deref;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use tonic_primitives::{keccak256, sign_message, Address, PrimitiveSignature};
+use tonic_primitives::{keccak256, Address, PrimitiveSignature, B256};
+use tonic_signer::Signer;
 
 use super::codec;
 
@@ -47,17 +48,17 @@ impl ProposalMessage {
         MessageType::Proposal
     }
 
-    fn data_to_sign(&self) -> [u8; 32] {
+    fn data_to_sign(&self) -> B256 {
         let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
-        *keccak256(bytes)
+        keccak256(bytes)
     }
 
-    pub fn into_signed(self, secret: [u8; 32]) -> ProposalMessageSigned {
+    pub fn into_signed(self, signer: &Signer) -> ProposalMessageSigned {
         let hash = self.data_to_sign();
-        let signature = sign_message(secret.into(), hash.into()).expect("Signing should not fail");
+        let signature = signer.sign_prehashed(hash);
         ProposalMessageSigned {
             message: self,
-            signature: signature.into(),
+            signature,
         }
     }
 }
@@ -95,17 +96,17 @@ impl PrepareMessage {
         MessageType::Prepare
     }
 
-    fn data_to_sign(&self) -> [u8; 32] {
+    fn data_to_sign(&self) -> B256 {
         let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
-        *keccak256(bytes)
+        keccak256(bytes)
     }
 
-    pub fn into_signed(self, secret: [u8; 32]) -> PrepareMessageSigned {
+    pub fn into_signed(self, signer: &Signer) -> PrepareMessageSigned {
         let hash = self.data_to_sign();
-        let signature = sign_message(secret.into(), hash.into()).expect("Signing should not fail");
+        let signature = signer.sign_prehashed(hash);
         PrepareMessageSigned {
             message: self,
-            signature: signature.into(),
+            signature,
         }
     }
 }
@@ -144,22 +145,22 @@ impl CommitMessage {
         MessageType::Commit
     }
 
-    fn data_to_sign(&self) -> [u8; 32] {
+    fn data_to_sign(&self) -> B256 {
         let bytes = codec::serialize(&(
             self.ty(),
             self.view,
             self.proposed_block_digest,
             self.commit_seal,
         ));
-        *keccak256(bytes)
+        keccak256(bytes)
     }
 
-    pub fn into_signed(self, secret: [u8; 32]) -> CommitMessageSigned {
+    pub fn into_signed(self, signer: &Signer) -> CommitMessageSigned {
         let hash = self.data_to_sign();
-        let signature = sign_message(secret.into(), hash.into()).expect("Signing should not fail");
+        let signature = signer.sign_prehashed(hash);
         CommitMessageSigned {
             message: self,
-            signature: signature.into(),
+            signature,
         }
     }
 }
@@ -197,21 +198,21 @@ impl RoundChangeMessage {
         MessageType::RoundChange
     }
 
-    fn data_to_sign(&self) -> [u8; 32] {
+    fn data_to_sign(&self) -> B256 {
         let bytes = codec::serialize(&(
             self.ty(),
             self.view,
             self.latest_prepared_proposed.as_ref().map(|(_, pc)| pc),
         ));
-        *keccak256(bytes)
+        keccak256(bytes)
     }
 
-    pub fn into_signed(self, secret: [u8; 32]) -> RoundChangeMessageSigned {
+    pub fn into_signed(self, signer: &Signer) -> RoundChangeMessageSigned {
         let hash = self.data_to_sign();
-        let signature = sign_message(secret.into(), hash.into()).expect("Signing should not fail");
+        let signature = signer.sign_prehashed(hash);
         RoundChangeMessageSigned {
             message: self,
-            signature: signature.into(),
+            signature,
         }
     }
 }

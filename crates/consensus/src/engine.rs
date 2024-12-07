@@ -1,5 +1,5 @@
 use tokio::sync::{mpsc, oneshot};
-use tonic_primitives::Address;
+use tonic_signer::Signer;
 
 use crate::backend::ValidatorManager;
 use crate::ibft::IBFT;
@@ -20,7 +20,7 @@ impl<V> ConsensusEngine<V>
 where
     V: ValidatorManager,
 {
-    pub fn new(validator_manager: V, height: u64, address: Address) -> Self {
+    pub fn new(validator_manager: V, height: u64, signer: Signer) -> Self {
         let messages = ConsensusMessages::new();
         Self {
             message_handler: MessageHandler::new(
@@ -28,7 +28,7 @@ where
                 validator_manager.clone(),
                 height,
             ),
-            ibft: IBFT::new(messages, validator_manager, address),
+            ibft: IBFT::new(messages, validator_manager, signer),
         }
     }
 

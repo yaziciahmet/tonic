@@ -3,7 +3,8 @@ use std::time::Duration;
 use tokio::select;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use tonic_primitives::{Address, PrimitiveSignature};
+use tonic_primitives::PrimitiveSignature;
+use tonic_signer::Signer;
 use tracing::info;
 
 use crate::backend::ValidatorManager;
@@ -24,22 +25,20 @@ pub struct IBFT<V>
 where
     V: ValidatorManager,
 {
-    base_round_timeout: Duration,
     messages: ConsensusMessages,
     validator_manager: V,
-    address: Address,
+    signer: Signer,
 }
 
 impl<V> IBFT<V>
 where
     V: ValidatorManager,
 {
-    pub fn new(messages: ConsensusMessages, validator_manager: V, address: Address) -> Self {
+    pub fn new(messages: ConsensusMessages, validator_manager: V, signer: Signer) -> Self {
         Self {
-            base_round_timeout: Duration::from_secs(8),
             messages,
             validator_manager,
-            address,
+            signer,
         }
     }
 
@@ -87,7 +86,9 @@ where
     fn start_ibft_round(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let messages = self.messages.clone();
         let validator_manager = self.validator_manager.clone();
-        let address = self.address;
+        let signer = self.signer.clone();
+
+        let state = RunState::new(view);
 
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {

@@ -8,6 +8,7 @@ repository = { workspace = true }
 
 [dependencies]
 tonic-primitives = { workspace = true }
+tonic-signer = { workspace = true }
 
 anyhow = { workspace = true }
 borsh = { workspace = true }

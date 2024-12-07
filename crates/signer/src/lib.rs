@@ -1,6 +1,7 @@
 use k256::SecretKey;
 use tonic_primitives::{sign_message, Address, PrimitiveSignature, B256};
 
+#[derive(Clone, Debug)]
 pub struct Signer {
     secret: B256,
     address: Address,

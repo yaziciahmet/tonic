@@ -4847,6 +4847,7 @@ dependencies = [
  "borsh",
  "tokio",
  "tonic-primitives",
+ "tonic-signer",
  "tracing",
 ]
 
