@@ -1,5 +1,5 @@
 [package]
-name = "tonic-consensus-core"
+name = "tonic-consensus"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }

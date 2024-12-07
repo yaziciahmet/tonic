@@ -1,8 +1,8 @@
 use tokio::sync::{broadcast, mpsc};
+use tonic_consensus::types::IBFTMessage;
 
 use crate::gossipsub::GossipMessage;
 use crate::p2p_service::{Broadcast, IncomingDummyMessage, P2PRequest};
-use crate::IncomingConsensusMessage;
 
 const CHANNEL_SIZE: usize = 1024;
 
@@ -11,13 +11,13 @@ pub struct P2PServiceProxy {
     request_sender: mpsc::Sender<P2PRequest>,
     dummy_tx: broadcast::Sender<IncomingDummyMessage>,
     // Consensus messages have only one receiver, hence mpsc instead of broadcast
-    consensus_tx: mpsc::Sender<IncomingConsensusMessage>,
+    consensus_tx: mpsc::Sender<IBFTMessage>,
 }
 
 impl P2PServiceProxy {
     pub fn new(
         request_sender: mpsc::Sender<P2PRequest>,
-        consensus_tx: mpsc::Sender<IncomingConsensusMessage>,
+        consensus_tx: mpsc::Sender<IBFTMessage>,
     ) -> Self {
         let (dummy_tx, _) = broadcast::channel(CHANNEL_SIZE);
         Self {
@@ -44,7 +44,7 @@ impl Broadcast for P2PServiceProxy {
         Ok(())
     }
 
-    fn broadcast_consensus(&self, data: IncomingConsensusMessage) -> anyhow::Result<()> {
+    fn broadcast_consensus(&self, data: IBFTMessage) -> anyhow::Result<()> {
         self.consensus_tx.blocking_send(data)?;
         Ok(())
     }
@@ -55,7 +55,7 @@ impl Broadcast for P2PServiceProxy {
 pub fn build_proxy() -> (
     P2PServiceProxy,
     mpsc::Receiver<P2PRequest>,
-    mpsc::Receiver<IncomingConsensusMessage>,
+    mpsc::Receiver<IBFTMessage>,
 ) {
     let (request_sender, request_receiver) = mpsc::channel(CHANNEL_SIZE);
     let (consensus_tx, consensus_rx) = mpsc::channel(CHANNEL_SIZE);

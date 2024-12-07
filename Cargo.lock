@@ -4841,25 +4841,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic-consensus-core"
+name = "tonic-consensus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "borsh",
  "tokio",
- "tonic-primitives",
- "tracing",
-]
-
-[[package]]
-name = "tonic-consensus-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "borsh",
- "tokio",
- "tonic-consensus-core",
- "tonic-p2p",
  "tonic-primitives",
  "tracing",
 ]
@@ -4884,7 +4871,7 @@ dependencies = [
  "sha2 0.10.8",
  "tokio",
  "tonic",
- "tonic-consensus-core",
+ "tonic-consensus",
  "tracing",
 ]
 

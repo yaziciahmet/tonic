@@ -1,4 +1,4 @@
-use tonic_consensus_core::types::IBFTMessage;
+use tonic_consensus::types::IBFTMessage;
 
 #[derive(Clone, Debug)]
 pub enum GossipTopicTag {
