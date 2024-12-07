@@ -6,10 +6,19 @@ use tokio::task::JoinHandle;
 use tonic_primitives::{Address, PrimitiveSignature};
 use tracing::info;
 
-use crate::validator_manager::ValidatorManager;
+use crate::backend::ValidatorManager;
 
 use super::messages::ConsensusMessages;
 use super::types::{PrepareMessage, PreparedCertificate, ProposedBlock, View};
+
+const TIMEOUT_TABLE: [Duration; 6] = [
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+    Duration::from_secs(16),
+    Duration::from_secs(32),
+    Duration::from_secs(64),
+    Duration::from_secs(128),
+];
 
 pub struct IBFT<V>
 where
@@ -35,21 +44,16 @@ where
     }
 
     pub async fn run(&self, height: u64, mut cancel: oneshot::Receiver<()>) {
-        let mut state = RunState::new(View { height, round: 0 });
+        let mut view = View { height, round: 0 };
 
+        info!("Running consensus height {}", view.height);
         loop {
-            let view = state.view();
+            info!("Running consensus round {}", view.round);
 
-            info!(
-                height = view.height,
-                round = view.round,
-                "Running consensus"
-            );
-
-            let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
-            let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal();
-            let (rcc_rx, rcc_task) = self.watch_rcc();
-            let (round_finished, round_task) = self.start_ibft_round(&mut state);
+            let timeout = tokio::time::sleep(get_round_timeout(view.round));
+            let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
+            let (rcc_rx, rcc_task) = self.watch_rcc(view);
+            let (round_finished, round_task) = self.start_ibft_round(view);
 
             let abort = move || {
                 round_task.abort();
@@ -66,33 +70,34 @@ where
                 }
                 _ = timeout => {
                     info!("Round timeout");
-                    abort();
                 }
                 _ = future_proposal_rx => {
-                    abort();
                 }
                 _ = rcc_rx => {
-                    abort();
                 }
                 _ = round_finished => {
-                    abort();
                 }
             }
+
+            abort();
+            view.round += 1;
         }
     }
 
-    fn start_ibft_round(&self, _state: &mut RunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn start_ibft_round(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+        let messages = self.messages.clone();
+        let validator_manager = self.validator_manager.clone();
+        let address = self.address;
+
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
-            // TODO: actually run state transition
-            tokio::time::sleep(Duration::from_secs(9999)).await;
             let _ = tx.send(());
         });
 
         (rx, task)
     }
 
-    fn watch_rcc(&self) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_rcc(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             // TODO: actually watch for rcc
@@ -103,7 +108,7 @@ where
         (rx, task)
     }
 
-    fn watch_future_proposal(&self) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_future_proposal(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             // TODO: actually watch for future proposal
@@ -113,10 +118,14 @@ where
 
         (rx, task)
     }
+}
 
-    pub fn get_round_timeout(&self, _round: u32) -> Duration {
-        self.base_round_timeout
+fn get_round_timeout(mut round: u32) -> Duration {
+    if round > 5 {
+        round = 5;
     }
+
+    TIMEOUT_TABLE[round as usize]
 }
 
 #[derive(Debug)]

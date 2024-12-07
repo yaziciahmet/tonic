@@ -8,8 +8,8 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 use tonic_primitives::Address;
 use tracing::warn;
 
+use crate::backend::ValidatorManager;
 use crate::types::IBFTMessage;
-use crate::validator_manager::ValidatorManager;
 
 use super::types::{
     CommitMessageSigned, PrepareMessageSigned, ProposalMessageSigned, RoundChangeMessageSigned,

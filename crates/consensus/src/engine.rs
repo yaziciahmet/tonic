@@ -1,10 +1,10 @@
 use tokio::sync::{mpsc, oneshot};
 use tonic_primitives::Address;
 
+use crate::backend::ValidatorManager;
 use crate::ibft::IBFT;
 use crate::messages::{ConsensusMessages, MessageHandler};
 use crate::types::IBFTMessage;
-use crate::validator_manager::ValidatorManager;
 
 /// `ConsensusEngine` is the main wrapper that handles synchronization
 /// in between incoming P2P messages and the ongoing IBFT run.
