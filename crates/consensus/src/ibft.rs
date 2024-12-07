@@ -69,17 +69,23 @@ where
                 }
                 _ = timeout => {
                     info!("Round timeout");
+                    abort();
+                    view.round += 1;
                 }
                 _ = future_proposal_rx => {
+                    info!("Received future proposal");
+                    abort();
                 }
                 _ = rcc_rx => {
+                    info!("Got enough round change messages to create round change certificate");
+                    abort();
                 }
                 _ = round_finished => {
+                    info!("Finished IBFT round");
+                    abort();
+                    return;
                 }
             }
-
-            abort();
-            view.round += 1;
         }
     }
 
