@@ -16,4 +16,4 @@ rand = { workspace = true, optional = true }
 
 [features]
 default = []
-test-helpers = ["rand"]
+test-helpers = ["dep:rand"]
