@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use tokio::select;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tonic_primitives::{Address, PrimitiveSignature};
 use tracing::info;
 
@@ -46,38 +47,71 @@ where
             );
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
-            let rcc = self.wait_for_rcc();
-            let future_proposal = self.wait_for_future_proposal();
-            let finalized_block = self.run_state_transition(&mut state);
+            let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal();
+            let (rcc_rx, rcc_task) = self.watch_rcc();
+            let (round_finished, round_task) = self.start_ibft_round(&mut state);
+
+            let abort = move || {
+                round_task.abort();
+                future_proposal_task.abort();
+                rcc_task.abort();
+            };
 
             select! {
                 biased;
                 _ = &mut cancel => {
                     info!("Received cancel signal, stopping consensus...");
+                    abort();
                     return;
                 }
                 _ = timeout => {
                     info!("Round timeout");
-                    state.move_round(view.round + 1);
-                    // TODO: generate round change message
+                    abort();
                 }
-                _ = finalized_block => {}
-                _ = future_proposal => {}
-                _ = rcc => {}
+                _ = future_proposal_rx => {
+                    abort();
+                }
+                _ = rcc_rx => {
+                    abort();
+                }
+                _ = round_finished => {
+                    abort();
+                }
             }
         }
     }
 
-    async fn run_state_transition(&self, _state: &mut RunState) {
-        todo!()
+    fn start_ibft_round(&self, _state: &mut RunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+        let (tx, rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            // TODO: actually run state transition
+            tokio::time::sleep(Duration::from_secs(9999)).await;
+            let _ = tx.send(());
+        });
+
+        (rx, task)
     }
 
-    async fn wait_for_rcc(&self) {
-        todo!()
+    fn watch_rcc(&self) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+        let (tx, rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            // TODO: actually watch for rcc
+            tokio::time::sleep(Duration::from_secs(9999)).await;
+            let _ = tx.send(());
+        });
+
+        (rx, task)
     }
 
-    async fn wait_for_future_proposal(&self) {
-        todo!()
+    fn watch_future_proposal(&self) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+        let (tx, rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            // TODO: actually watch for future proposal
+            tokio::time::sleep(Duration::from_secs(9999)).await;
+            let _ = tx.send(());
+        });
+
+        (rx, task)
     }
 
     pub fn get_round_timeout(&self, _round: u32) -> Duration {
@@ -86,7 +120,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct RunState {
+struct RunState {
     view: View,
     proposed_block: Option<ProposedBlock>,
     proposed_block_digest: Option<[u8; 32]>,
@@ -96,7 +130,7 @@ pub struct RunState {
 }
 
 impl RunState {
-    pub fn new(view: View) -> Self {
+    fn new(view: View) -> Self {
         Self {
             view,
             proposed_block: None,
@@ -107,23 +141,7 @@ impl RunState {
         }
     }
 
-    pub fn view(&self) -> View {
+    fn view(&self) -> View {
         self.view
-    }
-
-    pub fn move_round(&mut self, round: u32) -> Option<(PreparedCertificate, ProposedBlock)> {
-        self.view.round = round;
-
-        let proposed_block = self.proposed_block.take();
-        self.proposed_block_digest = None;
-        self.valid_prepare_messages.clear();
-        let latest_pc = self.latest_prepared_certificate.take();
-        self.valid_commit_seals.clear();
-
-        match (latest_pc, proposed_block) {
-            (Some(pc), Some(block)) => Some((pc, block)),
-            (Some(_), None) => panic!("Has prepared certificate but doesn't have proposed block"),
-            (None, _) => None,
-        }
     }
 }
