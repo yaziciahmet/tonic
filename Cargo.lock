@@ -4895,6 +4895,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic-signer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "k256",
+ "rand",
+ "tonic-primitives",
+]
+
+[[package]]
 name = "tonic-txpool"
 version = "0.1.0"
 dependencies = [

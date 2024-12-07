@@ -6,6 +6,7 @@ members = [
     "crates/p2p",
     "crates/primitives",
     "crates/rpc",
+    "crates/signer",
     "crates/txpool",
 ]
 resolver = "2"
@@ -25,6 +26,7 @@ tonic-database = { path = "crates/database", default-features = false }
 tonic-p2p = { path = "crates/p2p", default-features = false }
 tonic-primitives = { path = "crates/primitives", default-features = false }
 tonic-rpc = { path = "crates/rpc", default-features = false }
+tonic-signer = { path = "crates/signer", default-features = false }
 tonic-txpool = { path = "crates/txpool", default-features = false }
 
 # Alloy dependencies
@@ -42,8 +44,8 @@ bytemuck = { version = "1", default-features = false }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.24", default-features = false }
+k256 = { version = "0.13", default-features = false }
 rand = { version = "0.8" ,default-features = false, features = ["std", "std_rng"] }
-secp256k1 = { version = "0.30" ,default-features = false, features = ["global-context", "recovery"] }
 serde = { version = "1", default-features = false, features = ["derive"] }
 sha2 = { version = "0.10", default-features = false }
 tempfile = { version = "3", default-features = false }
