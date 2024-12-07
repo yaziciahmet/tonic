@@ -17,19 +17,19 @@ where
     base_round_timeout: Duration,
     messages: ConsensusMessages,
     validator_manager: V,
-    self_address: Address,
+    address: Address,
 }
 
 impl<V> IBFT<V>
 where
     V: ValidatorManager,
 {
-    pub fn new(messages: ConsensusMessages, validator_manager: V, self_address: Address) -> Self {
+    pub fn new(messages: ConsensusMessages, validator_manager: V, address: Address) -> Self {
         Self {
             base_round_timeout: Duration::from_secs(8),
             messages,
             validator_manager,
-            self_address,
+            address,
         }
     }
 
