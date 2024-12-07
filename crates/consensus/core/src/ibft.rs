@@ -2,29 +2,38 @@ use std::time::Duration;
 
 use tokio::select;
 use tokio::sync::oneshot;
-use tonic_primitives::PrimitiveSignature;
+use tonic_primitives::{Address, PrimitiveSignature};
 use tracing::info;
+
+use crate::validator_manager::ValidatorManager;
 
 use super::messages::ConsensusMessages;
 use super::types::{PrepareMessage, PreparedCertificate, ProposedBlock, View};
 
-pub struct IBFT {
+pub struct IBFT<V>
+where
+    V: ValidatorManager,
+{
     base_round_timeout: Duration,
+    messages: ConsensusMessages,
+    validator_manager: V,
+    self_address: Address,
 }
 
-impl IBFT {
-    pub fn new() -> Self {
+impl<V> IBFT<V>
+where
+    V: ValidatorManager,
+{
+    pub fn new(messages: ConsensusMessages, validator_manager: V, self_address: Address) -> Self {
         Self {
             base_round_timeout: Duration::from_secs(8),
+            messages,
+            validator_manager,
+            self_address,
         }
     }
 
-    pub async fn run(
-        &self,
-        height: u64,
-        messages: &ConsensusMessages,
-        mut cancel: oneshot::Receiver<()>,
-    ) {
+    pub async fn run(&self, height: u64, mut cancel: oneshot::Receiver<()>) {
         let mut state = RunState::new(View { height, round: 0 });
 
         loop {
@@ -37,7 +46,7 @@ impl IBFT {
             );
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
-            let rcc = self.wait_for_rcc(messages);
+            let rcc = self.wait_for_rcc();
             let future_proposal = self.wait_for_future_proposal();
             let finalized_block = self.run_state_transition(&mut state);
 
@@ -63,8 +72,7 @@ impl IBFT {
         todo!()
     }
 
-    async fn wait_for_rcc(&self, messages: &ConsensusMessages) {
-        let _rx = messages.subscribe_round_change();
+    async fn wait_for_rcc(&self) {
         todo!()
     }
 
