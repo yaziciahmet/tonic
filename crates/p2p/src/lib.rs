@@ -31,8 +31,8 @@ impl TryPeerId for Multiaddr {
 mod tests {
     use std::time::Duration;
 
-    use libp2p::{Multiaddr, PeerId};
     use libp2p::identity::Keypair;
+    use libp2p::{Multiaddr, PeerId};
 
     use super::{build_proxy, Config, GossipMessage, P2PService, P2PServiceProxy};
 
