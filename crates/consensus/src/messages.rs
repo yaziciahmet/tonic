@@ -289,6 +289,11 @@ impl ConsensusMessages {
 
         messages.values().cloned().collect()
     }
+
+    pub async fn get_proposal_message(&self, view: View) -> Option<Arc<ProposalMessageSigned>> {
+        let proposal_messages = self.proposal_messages.lock().await;
+        proposal_messages.get_by_view(view).cloned()
+    }
 }
 
 #[derive(Debug)]
@@ -333,5 +338,11 @@ impl<T> ViewMap<T> {
 
     fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u32, T> {
         self.0.entry(view.height).or_default().entry(view.round)
+    }
+
+    fn get_by_view(&self, view: View) -> Option<&T> {
+        self.0
+            .get(&view.height)
+            .and_then(|btree| btree.get(&view.round))
     }
 }
