@@ -61,6 +61,10 @@ impl ProposalMessage {
             signature,
         }
     }
+
+    pub fn verify_digest(&self) -> bool {
+        self.proposed_block.digest() == self.proposed_block_digest
+    }
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
