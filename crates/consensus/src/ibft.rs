@@ -92,12 +92,11 @@ where
     fn start_ibft_round(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let messages = self.messages.clone();
         let validator_manager = self.validator_manager.clone();
-        let signer = self.signer.clone();
-
-        let state = RunState::new(view);
+        let signer = self.signer;
 
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
+            run_ibft_round(messages, validator_manager, signer, view).await;
             let _ = tx.send(());
         });
 
@@ -124,6 +123,19 @@ where
         });
 
         (rx, task)
+    }
+}
+
+async fn run_ibft_round<V>(
+    messages: ConsensusMessages,
+    validator_manager: V,
+    signer: Signer,
+    view: View,
+) where
+    V: ValidatorManager,
+{
+    if validator_manager.is_proposer(signer.address(), view) {
+        // TODO: build block and broadcast it to peers
     }
 }
 
