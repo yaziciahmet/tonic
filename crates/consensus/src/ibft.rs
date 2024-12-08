@@ -105,7 +105,10 @@ where
     async fn run_ibft_round(&self, view: View) {
         let mut state = RunState::new(view);
 
-        let proposal = if self.validator_manager.is_proposer(self.signer.address(), view) {
+        let proposal = if self
+            .validator_manager
+            .is_proposer(self.signer.address(), view)
+        {
             // TODO: build block and broadcast it to peers
             todo!()
         } else {
