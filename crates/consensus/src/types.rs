@@ -1,15 +1,73 @@
+use std::io;
+use std::sync::Arc;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use tonic_primitives::{keccak256, Address, PrimitiveSignature, B256};
 use tonic_signer::Signer;
 
 use super::codec;
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug)]
 pub enum IBFTMessage {
-    Proposal(ProposalMessageSigned),
-    Prepare(PrepareMessageSigned),
-    Commit(CommitMessageSigned),
-    RoundChange(RoundChangeMessageSigned),
+    Proposal(Arc<ProposalMessageSigned>),
+    Prepare(Arc<PrepareMessageSigned>),
+    Commit(Arc<CommitMessageSigned>),
+    RoundChange(Arc<RoundChangeMessageSigned>),
+}
+
+impl BorshSerialize for IBFTMessage {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        match self {
+            Self::Proposal(proposal) => {
+                // Write the enum variant
+                proposal.message.ty().serialize(writer)?;
+                // Write inner data
+                proposal.serialize(writer)
+            }
+            Self::Prepare(prepare) => {
+                // Write the enum variant
+                prepare.message.ty().serialize(writer)?;
+                // Write inner data
+                prepare.serialize(writer)
+            }
+            Self::Commit(commit) => {
+                // Write the enum variant
+                commit.message.ty().serialize(writer)?;
+                // Write inner data
+                commit.serialize(writer)
+            }
+            Self::RoundChange(round_change) => {
+                // Write the enum variant
+                round_change.message.ty().serialize(writer)?;
+                // Write inner data
+                round_change.serialize(writer)
+            }
+        }
+    }
+}
+
+impl BorshDeserialize for IBFTMessage {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let ty = borsh::from_reader(reader)?;
+        match ty {
+            MessageType::Proposal => {
+                let message = borsh::from_reader(reader)?;
+                Ok(Self::Proposal(Arc::new(message)))
+            }
+            MessageType::Prepare => {
+                let message = borsh::from_reader(reader)?;
+                Ok(Self::Prepare(Arc::new(message)))
+            }
+            MessageType::Commit => {
+                let message = borsh::from_reader(reader)?;
+                Ok(Self::Commit(Arc::new(message)))
+            }
+            MessageType::RoundChange => {
+                let message = borsh::from_reader(reader)?;
+                Ok(Self::RoundChange(Arc::new(message)))
+            }
+        }
+    }
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]

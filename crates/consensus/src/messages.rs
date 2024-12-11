@@ -201,12 +201,10 @@ impl ConsensusMessages {
     }
 
     /// Adds a proposal message if not already exists for the view, and broadcasts it.
-    pub async fn add_proposal_message(&self, proposal: ProposalMessageSigned) {
+    pub async fn add_proposal_message(&self, proposal: Arc<ProposalMessageSigned>) {
         let mut proposal_messages = self.proposal_messages.lock().await;
         let entry = proposal_messages.view_entry(proposal.view());
         if let btree_map::Entry::Vacant(entry) = entry {
-            let proposal = Arc::new(proposal);
-
             entry.insert(proposal.clone());
 
             let _ = self.proposal_tx.send(proposal);
@@ -214,12 +212,10 @@ impl ConsensusMessages {
     }
 
     /// Adds a prepare message if not already exists for the view and sender, and broadcasts it.
-    pub async fn add_prepare_message(&self, prepare: PrepareMessageSigned, sender: Address) {
+    pub async fn add_prepare_message(&self, prepare: Arc<PrepareMessageSigned>, sender: Address) {
         let mut prepare_messages = self.prepare_messages.lock().await;
         let entry = prepare_messages.sender_entry(prepare.view(), sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            let prepare = Arc::new(prepare);
-
             entry.insert(prepare.clone());
 
             let _ = self.prepare_tx.send(prepare);
@@ -227,12 +223,10 @@ impl ConsensusMessages {
     }
 
     /// Adds a commit message if not already exists for the view and sender, and broadcasts it.
-    pub async fn add_commit_message(&self, commit: CommitMessageSigned, sender: Address) {
+    pub async fn add_commit_message(&self, commit: Arc<CommitMessageSigned>, sender: Address) {
         let mut commit_messages = self.commit_messages.lock().await;
         let entry = commit_messages.sender_entry(commit.view(), sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            let commit = Arc::new(commit);
-
             entry.insert(commit.clone());
 
             let _ = self.commit_tx.send(commit);
@@ -242,14 +236,12 @@ impl ConsensusMessages {
     /// Adds a round change message if not already exists for the view and sender, and broadcasts it.
     pub async fn add_round_change_message(
         &self,
-        round_change: RoundChangeMessageSigned,
+        round_change: Arc<RoundChangeMessageSigned>,
         sender: Address,
     ) {
         let mut round_change_messages = self.round_change_messages.lock().await;
         let entry = round_change_messages.sender_entry(round_change.view(), sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            let round_change = Arc::new(round_change);
-
             entry.insert(round_change.clone());
 
             let _ = self.round_change_tx.send(round_change);
