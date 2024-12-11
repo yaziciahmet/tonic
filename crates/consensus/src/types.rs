@@ -31,14 +31,16 @@ pub struct ProposalMessage {
 }
 
 impl ProposalMessage {
-    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::Proposal
     }
 
-    #[inline]
     pub fn view(&self) -> View {
         self.view
+    }
+
+    pub fn proposed_block(&self) -> &ProposedBlock {
+        &self.proposed_block
     }
 
     fn data_to_sign(&self) -> B256 {
@@ -67,9 +69,12 @@ pub struct ProposalMessageSigned {
 }
 
 impl ProposalMessageSigned {
-    #[inline]
     pub fn view(&self) -> View {
         self.message.view
+    }
+
+    pub fn proposed_block(&self) -> &ProposedBlock {
+        &self.message.proposed_block
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
@@ -90,12 +95,10 @@ pub struct PrepareMessage {
 }
 
 impl PrepareMessage {
-    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::Prepare
     }
 
-    #[inline]
     pub fn view(&self) -> View {
         self.view
     }
@@ -122,7 +125,6 @@ pub struct PrepareMessageSigned {
 }
 
 impl PrepareMessageSigned {
-    #[inline]
     pub fn view(&self) -> View {
         self.message.view
     }
@@ -142,12 +144,10 @@ pub struct CommitMessage {
 }
 
 impl CommitMessage {
-    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::Commit
     }
 
-    #[inline]
     pub fn view(&self) -> View {
         self.view
     }
@@ -179,7 +179,6 @@ pub struct CommitMessageSigned {
 }
 
 impl CommitMessageSigned {
-    #[inline]
     pub fn view(&self) -> View {
         self.message.view
     }
@@ -198,12 +197,10 @@ pub struct RoundChangeMessage {
 }
 
 impl RoundChangeMessage {
-    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::RoundChange
     }
 
-    #[inline]
     pub fn view(&self) -> View {
         self.view
     }
@@ -234,7 +231,6 @@ pub struct RoundChangeMessageSigned {
 }
 
 impl RoundChangeMessageSigned {
-    #[inline]
     pub fn view(&self) -> View {
         self.message.view
     }
@@ -253,8 +249,18 @@ pub struct RoundChangeCertificate {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedBlock {
-    pub raw_eth_block: Vec<u8>,
-    pub round: u32,
+    raw_eth_block: Vec<u8>,
+    round: u32,
+}
+
+impl ProposedBlock {
+    pub fn raw_eth_block(&self) -> &[u8] {
+        &self.raw_eth_block
+    }
+
+    pub fn round(&self) -> u32 {
+        self.round
+    }
 }
 
 impl ProposedBlock {
@@ -270,7 +276,7 @@ pub struct PreparedCertificate {
     pub prepare_messages: Vec<PrepareMessage>,
 }
 
-#[derive(Clone, Copy, Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Copy, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct View {
     pub height: u64,
     pub round: u32,

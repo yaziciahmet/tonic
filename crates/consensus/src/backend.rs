@@ -9,3 +9,7 @@ pub trait ValidatorManager: Clone + Send + Sync + 'static {
 
     fn quorum(&self, height: u64) -> usize;
 }
+
+pub trait BlockVerifier: Clone + Send + Sync + 'static {
+    fn verify_block(&self, raw_block: &[u8]) -> anyhow::Result<()>;
+}

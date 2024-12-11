@@ -7,7 +7,7 @@ use tonic_primitives::PrimitiveSignature;
 use tonic_signer::Signer;
 use tracing::info;
 
-use crate::backend::ValidatorManager;
+use crate::backend::{BlockVerifier, ValidatorManager};
 
 use super::messages::ConsensusMessages;
 use super::types::{PrepareMessage, PreparedCertificate, ProposedBlock, View};
@@ -22,23 +22,27 @@ const TIMEOUT_TABLE: [Duration; 6] = [
 ];
 
 #[derive(Clone)]
-pub struct IBFT<V>
+pub struct IBFT<V, BV>
 where
     V: ValidatorManager,
+    BV: BlockVerifier,
 {
     messages: ConsensusMessages,
     validator_manager: V,
     signer: Signer,
+    block_verifier: BV,
 }
 
-impl<V> IBFT<V>
+impl<V, BV> IBFT<V, BV>
 where
     V: ValidatorManager,
+    BV: BlockVerifier,
 {
-    pub fn new(messages: ConsensusMessages, validator_manager: V, signer: Signer) -> Self {
+    pub fn new(messages: ConsensusMessages, validator_manager: V, block_verifier: BV, signer: Signer) -> Self {
         Self {
             messages,
             validator_manager,
+            block_verifier,
             signer,
         }
     }
@@ -105,8 +109,6 @@ where
     async fn run_ibft_round0(&self, view: View) {
         assert_eq!(view.round, 0, "round must be 0");
 
-        let mut state = RunState::new(view);
-
         let proposal = if self
             .validator_manager
             .is_proposer(self.signer.address(), view)
@@ -119,15 +121,30 @@ where
             let proposal = if let Some(proposal) = self.messages.get_proposal_message(view).await {
                 proposal
             } else {
-                proposal_rx
-                    .recv()
-                    .await
-                    .expect("Proposal subscriber channel should not close")
+                // Wait until we receive a proposal for the given view
+                loop {
+                    let proposal = proposal_rx
+                        .recv()
+                        .await
+                        .expect("Proposal subscriber channel should not close");
+                    if proposal.view() == view {
+                        break proposal;
+                    }
+                }
             };
 
+            // TODO: handle invalid proposal somehow
+            let proposed_block = proposal.proposed_block();
+            // Verify proposed block's round
+            if proposed_block.round() != view.round {
+                return;
+            }
             // Verify proposed block digest
             if !proposal.verify_digest() {
-                // TODO: return error and send a round change message
+                return;
+            }
+            // Verify ethereum block
+            if let Err(_err) = self.block_verifier.verify_block(proposed_block.raw_eth_block()) {
                 return;
             }
 
