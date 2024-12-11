@@ -31,10 +31,12 @@ pub struct ProposalMessage {
 }
 
 impl ProposalMessage {
+    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::Proposal
     }
 
+    #[inline]
     pub fn view(&self) -> View {
         self.view
     }
@@ -65,6 +67,7 @@ pub struct ProposalMessageSigned {
 }
 
 impl ProposalMessageSigned {
+    #[inline]
     pub fn view(&self) -> View {
         self.message.view
     }
@@ -87,10 +90,12 @@ pub struct PrepareMessage {
 }
 
 impl PrepareMessage {
+    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::Prepare
     }
 
+    #[inline]
     pub fn view(&self) -> View {
         self.view
     }
@@ -117,6 +122,7 @@ pub struct PrepareMessageSigned {
 }
 
 impl PrepareMessageSigned {
+    #[inline]
     pub fn view(&self) -> View {
         self.message.view
     }
@@ -136,10 +142,12 @@ pub struct CommitMessage {
 }
 
 impl CommitMessage {
+    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::Commit
     }
 
+    #[inline]
     pub fn view(&self) -> View {
         self.view
     }
@@ -171,6 +179,7 @@ pub struct CommitMessageSigned {
 }
 
 impl CommitMessageSigned {
+    #[inline]
     pub fn view(&self) -> View {
         self.message.view
     }
@@ -189,10 +198,12 @@ pub struct RoundChangeMessage {
 }
 
 impl RoundChangeMessage {
+    #[inline]
     pub fn ty(&self) -> MessageType {
         MessageType::RoundChange
     }
 
+    #[inline]
     pub fn view(&self) -> View {
         self.view
     }
@@ -223,6 +234,7 @@ pub struct RoundChangeMessageSigned {
 }
 
 impl RoundChangeMessageSigned {
+    #[inline]
     pub fn view(&self) -> View {
         self.message.view
     }
