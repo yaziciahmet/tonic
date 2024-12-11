@@ -62,57 +62,56 @@ where
     async fn handle_consensus_message(&self, message: IBFTMessage) -> anyhow::Result<()> {
         match message {
             IBFTMessage::Proposal(proposal) => {
-                if proposal.view.height <= self.height() {
+                let view = proposal.view();
+
+                if view.height <= self.height() {
                     return Ok(());
                 }
 
                 let sender = proposal.recover_signer()?;
-                if !self.validator_manager.is_proposer(sender, proposal.view) {
+                if !self.validator_manager.is_proposer(sender, view) {
                     return Err(anyhow!("Received proposal from non-proposer"));
                 }
 
                 self.messages.add_proposal_message(proposal).await;
             }
             IBFTMessage::Prepare(prepare) => {
-                if prepare.view.height <= self.height() {
+                let view = prepare.view();
+
+                if view.height <= self.height() {
                     return Ok(());
                 }
 
                 let sender = prepare.recover_signer()?;
-                if !self
-                    .validator_manager
-                    .is_validator(sender, prepare.view.height)
-                {
+                if !self.validator_manager.is_validator(sender, view.height) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
 
                 self.messages.add_prepare_message(prepare, sender).await;
             }
             IBFTMessage::Commit(commit) => {
-                if commit.view.height <= self.height() {
+                let view = commit.view();
+
+                if view.height <= self.height() {
                     return Ok(());
                 }
 
                 let sender = commit.recover_signer()?;
-                if !self
-                    .validator_manager
-                    .is_validator(sender, commit.view.height)
-                {
+                if !self.validator_manager.is_validator(sender, view.height) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
 
                 self.messages.add_commit_message(commit, sender).await;
             }
             IBFTMessage::RoundChange(round_change) => {
-                if round_change.view.height <= self.height() {
+                let view = round_change.view();
+
+                if view.height <= self.height() {
                     return Ok(());
                 }
 
                 let sender = round_change.recover_signer()?;
-                if !self
-                    .validator_manager
-                    .is_validator(sender, round_change.view.height)
-                {
+                if !self.validator_manager.is_validator(sender, view.height) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
 
@@ -204,7 +203,7 @@ impl ConsensusMessages {
     /// Adds a proposal message if not already exists for the view, and broadcasts it.
     pub async fn add_proposal_message(&self, proposal: ProposalMessageSigned) {
         let mut proposal_messages = self.proposal_messages.lock().await;
-        let entry = proposal_messages.view_entry(proposal.view);
+        let entry = proposal_messages.view_entry(proposal.view());
         if let btree_map::Entry::Vacant(entry) = entry {
             let proposal = Arc::new(proposal);
 
@@ -217,7 +216,7 @@ impl ConsensusMessages {
     /// Adds a prepare message if not already exists for the view and sender, and broadcasts it.
     pub async fn add_prepare_message(&self, prepare: PrepareMessageSigned, sender: Address) {
         let mut prepare_messages = self.prepare_messages.lock().await;
-        let entry = prepare_messages.sender_entry(prepare.view, sender);
+        let entry = prepare_messages.sender_entry(prepare.view(), sender);
         if let hash_map::Entry::Vacant(entry) = entry {
             let prepare = Arc::new(prepare);
 
@@ -230,7 +229,7 @@ impl ConsensusMessages {
     /// Adds a commit message if not already exists for the view and sender, and broadcasts it.
     pub async fn add_commit_message(&self, commit: CommitMessageSigned, sender: Address) {
         let mut commit_messages = self.commit_messages.lock().await;
-        let entry = commit_messages.sender_entry(commit.view, sender);
+        let entry = commit_messages.sender_entry(commit.view(), sender);
         if let hash_map::Entry::Vacant(entry) = entry {
             let commit = Arc::new(commit);
 
@@ -247,7 +246,7 @@ impl ConsensusMessages {
         sender: Address,
     ) {
         let mut round_change_messages = self.round_change_messages.lock().await;
-        let entry = round_change_messages.sender_entry(round_change.view, sender);
+        let entry = round_change_messages.sender_entry(round_change.view(), sender);
         if let hash_map::Entry::Vacant(entry) = entry {
             let round_change = Arc::new(round_change);
 
