@@ -2,7 +2,7 @@ use tokio::sync::{broadcast, mpsc};
 use tonic_consensus::types::IBFTMessage;
 
 use crate::gossipsub::GossipMessage;
-use crate::p2p_service::{Broadcast, IncomingDummyMessage, P2PRequest};
+use crate::p2p_service::{self, IncomingDummyMessage, P2PRequest};
 
 const CHANNEL_SIZE: usize = 1024;
 
@@ -38,7 +38,7 @@ impl P2PServiceProxy {
     }
 }
 
-impl Broadcast for P2PServiceProxy {
+impl p2p_service::Broadcast for P2PServiceProxy {
     fn broadcast_dummy(&self, data: IncomingDummyMessage) -> anyhow::Result<()> {
         self.dummy_tx.send(data)?;
         Ok(())
@@ -47,6 +47,12 @@ impl Broadcast for P2PServiceProxy {
     fn broadcast_consensus(&self, data: IBFTMessage) -> anyhow::Result<()> {
         self.consensus_tx.blocking_send(data)?;
         Ok(())
+    }
+}
+
+impl tonic_consensus::backend::Broadcast for P2PServiceProxy {
+    fn broadcast(&self, message: IBFTMessage) -> anyhow::Result<()> {
+        self.broadcast_message(GossipMessage::Consensus(message))
     }
 }
 

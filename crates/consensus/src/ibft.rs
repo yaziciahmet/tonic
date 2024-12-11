@@ -1,5 +1,7 @@
+use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::anyhow;
 use tokio::select;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -7,8 +9,8 @@ use tonic_primitives::PrimitiveSignature;
 use tonic_signer::Signer;
 use tracing::info;
 
-use crate::backend::{BlockBuilder, BlockVerifier, ValidatorManager};
-use crate::types::ProposalMessage;
+use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
+use crate::types::{IBFTMessage, ProposalMessage};
 
 use super::messages::ConsensusMessages;
 use super::types::{PrepareMessage, PreparedCertificate, ProposedBlock, View};
@@ -23,28 +25,32 @@ const TIMEOUT_TABLE: [Duration; 6] = [
 ];
 
 #[derive(Clone)]
-pub struct IBFT<V, BV, BB>
+pub struct IBFT<V, B, BV, BB>
 where
     V: ValidatorManager,
+    B: Broadcast,
     BV: BlockVerifier,
     BB: BlockBuilder,
 {
     messages: ConsensusMessages,
     validator_manager: V,
+    broadcast: B,
     signer: Signer,
     block_verifier: BV,
     block_builder: BB,
 }
 
-impl<V, BV, BB> IBFT<V, BV, BB>
+impl<V, B, BV, BB> IBFT<V, B, BV, BB>
 where
     V: ValidatorManager,
+    B: Broadcast,
     BV: BlockVerifier,
     BB: BlockBuilder,
 {
     pub fn new(
         messages: ConsensusMessages,
         validator_manager: V,
+        broadcast: B,
         block_verifier: BV,
         block_builder: BB,
         signer: Signer,
@@ -52,6 +58,7 @@ where
         Self {
             messages,
             validator_manager,
+            broadcast,
             block_verifier,
             block_builder,
             signer,
@@ -110,27 +117,29 @@ where
         let (tx, rx) = oneshot::channel();
 
         let task = tokio::spawn(async move {
-            ibft.run_ibft_round0(view).await;
+            let _ = ibft.run_ibft_round0(view).await;
             let _ = tx.send(());
         });
 
         (rx, task)
     }
 
-    async fn run_ibft_round0(&self, view: View) {
+    async fn run_ibft_round0(&self, view: View) -> anyhow::Result<()> {
         assert_eq!(view.round, 0, "round must be 0");
 
         let proposal = if self
             .validator_manager
             .is_proposer(self.signer.address(), view)
         {
-            // TODO: build block and broadcast it to peers
-            let raw_eth_block = self
-                .block_builder
-                .build_block(view.height)
-                .expect("Block building should not fail");
-            ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer);
-            todo!()
+            let raw_eth_block = self.block_builder.build_block(view.height)?;
+            let proposal =
+                Arc::new(ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer));
+
+            self.messages.add_proposal_message(proposal.clone()).await;
+            self.broadcast
+                .broadcast(IBFTMessage::Proposal(proposal.clone()))?;
+
+            proposal
         } else {
             // We first subscribe so we don't miss the notification in the brief time we query the proposal.
             let mut proposal_rx = self.messages.subscribe_proposal();
@@ -149,26 +158,27 @@ where
                 }
             };
 
-            // TODO: handle invalid proposal somehow
             let proposed_block = proposal.proposed_block();
             // Verify proposed block's round
             if proposed_block.round() != view.round {
-                return;
+                return Err(anyhow!("Invalid proposed block round"));
             }
             // Verify proposed block digest
             if !proposal.verify_digest() {
-                return;
+                return Err(anyhow!("Invalid proposed block digest"));
             }
             // Verify ethereum block
-            if let Err(_err) = self
+            if let Err(err) = self
                 .block_verifier
                 .verify_block(proposed_block.raw_eth_block())
             {
-                return;
+                return Err(anyhow!("Invalid ethereum block: {err}"));
             }
 
             proposal
         };
+
+        Ok(())
     }
 
     fn watch_rcc(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
