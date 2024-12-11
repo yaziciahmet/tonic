@@ -31,6 +31,7 @@ impl Signer {
             .into()
     }
 
+    #[inline]
     pub fn address(&self) -> Address {
         self.address
     }

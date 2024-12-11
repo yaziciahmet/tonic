@@ -95,14 +95,16 @@ where
         let (tx, rx) = oneshot::channel();
 
         let task = tokio::spawn(async move {
-            ibft.run_ibft_round(view).await;
+            ibft.run_ibft_round0(view).await;
             let _ = tx.send(());
         });
 
         (rx, task)
     }
 
-    async fn run_ibft_round(&self, view: View) {
+    async fn run_ibft_round0(&self, view: View) {
+        assert_eq!(view.round, 0, "round must be 0");
+
         let mut state = RunState::new(view);
 
         let proposal = if self
