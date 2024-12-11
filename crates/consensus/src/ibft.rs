@@ -7,7 +7,8 @@ use tonic_primitives::PrimitiveSignature;
 use tonic_signer::Signer;
 use tracing::info;
 
-use crate::backend::{BlockVerifier, ValidatorManager};
+use crate::backend::{BlockBuilder, BlockVerifier, ValidatorManager};
+use crate::types::ProposalMessage;
 
 use super::messages::ConsensusMessages;
 use super::types::{PrepareMessage, PreparedCertificate, ProposedBlock, View};
@@ -22,27 +23,37 @@ const TIMEOUT_TABLE: [Duration; 6] = [
 ];
 
 #[derive(Clone)]
-pub struct IBFT<V, BV>
+pub struct IBFT<V, BV, BB>
 where
     V: ValidatorManager,
     BV: BlockVerifier,
+    BB: BlockBuilder,
 {
     messages: ConsensusMessages,
     validator_manager: V,
     signer: Signer,
     block_verifier: BV,
+    block_builder: BB,
 }
 
-impl<V, BV> IBFT<V, BV>
+impl<V, BV, BB> IBFT<V, BV, BB>
 where
     V: ValidatorManager,
     BV: BlockVerifier,
+    BB: BlockBuilder,
 {
-    pub fn new(messages: ConsensusMessages, validator_manager: V, block_verifier: BV, signer: Signer) -> Self {
+    pub fn new(
+        messages: ConsensusMessages,
+        validator_manager: V,
+        block_verifier: BV,
+        block_builder: BB,
+        signer: Signer,
+    ) -> Self {
         Self {
             messages,
             validator_manager,
             block_verifier,
+            block_builder,
             signer,
         }
     }
@@ -114,6 +125,11 @@ where
             .is_proposer(self.signer.address(), view)
         {
             // TODO: build block and broadcast it to peers
+            let raw_eth_block = self
+                .block_builder
+                .build_block(view.height)
+                .expect("Block building should not fail");
+            ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer);
             todo!()
         } else {
             // We first subscribe so we don't miss the notification in the brief time we query the proposal.
@@ -144,7 +160,10 @@ where
                 return;
             }
             // Verify ethereum block
-            if let Err(_err) = self.block_verifier.verify_block(proposed_block.raw_eth_block()) {
+            if let Err(_err) = self
+                .block_verifier
+                .verify_block(proposed_block.raw_eth_block())
+            {
                 return;
             }
 

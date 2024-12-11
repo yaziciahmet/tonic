@@ -31,6 +31,23 @@ pub struct ProposalMessage {
 }
 
 impl ProposalMessage {
+    pub fn new(
+        view: View,
+        raw_eth_block: Vec<u8>,
+        round_change_certificate: Option<RoundChangeCertificate>,
+    ) -> Self {
+        let proposed_block = ProposedBlock {
+            raw_eth_block,
+            round: view.round,
+        };
+        Self {
+            view,
+            proposed_block_digest: proposed_block.digest(),
+            proposed_block,
+            round_change_certificate,
+        }
+    }
+
     pub fn ty(&self) -> MessageType {
         MessageType::Proposal
     }

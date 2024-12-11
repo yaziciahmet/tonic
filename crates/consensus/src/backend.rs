@@ -13,3 +13,7 @@ pub trait ValidatorManager: Clone + Send + Sync + 'static {
 pub trait BlockVerifier: Clone + Send + Sync + 'static {
     fn verify_block(&self, raw_block: &[u8]) -> anyhow::Result<()>;
 }
+
+pub trait BlockBuilder: Clone + Send + Sync + 'static {
+    fn build_block(&self, height: u64) -> anyhow::Result<Vec<u8>>;
+}
