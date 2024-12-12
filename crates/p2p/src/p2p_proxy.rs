@@ -1,78 +1,121 @@
+use std::sync::Arc;
+
+use anyhow::anyhow;
 use async_trait::async_trait;
+use libp2p::gossipsub::TopicHash;
 use tokio::sync::{broadcast, mpsc};
 use tonic_consensus::types::{FinalizedBlock, IBFTMessage};
+use tracing::warn;
 
-use crate::gossipsub::GossipMessage;
-use crate::p2p_service::{self, IncomingDummyMessage, P2PRequest};
+use crate::gossipsub::{GossipCodec, GossipTopicTag, GossipTopics};
+use crate::p2p_service::{self, P2PRequest};
 
+const MAX_MESSAGE_SIZE: usize = 1024 * 1024 * 4; // 4 MB
 const CHANNEL_SIZE: usize = 1024;
 
 #[derive(Clone)]
 pub struct P2PServiceProxy {
+    codec: GossipCodec,
+    topics: GossipTopics,
+
     request_sender: mpsc::Sender<P2PRequest>,
-    dummy_tx: broadcast::Sender<IncomingDummyMessage>,
     // Consensus messages have only one receiver, hence mpsc instead of broadcast
     consensus_tx: mpsc::Sender<IBFTMessage>,
+    block_tx: broadcast::Sender<Arc<FinalizedBlock>>,
 }
 
 impl P2PServiceProxy {
     pub fn new(
+        network_name: &str,
         request_sender: mpsc::Sender<P2PRequest>,
         consensus_tx: mpsc::Sender<IBFTMessage>,
     ) -> Self {
-        let (dummy_tx, _) = broadcast::channel(CHANNEL_SIZE);
+        let codec = GossipCodec::new(MAX_MESSAGE_SIZE);
+        let topics = GossipTopics::new(network_name);
+        let (block_tx, _) = broadcast::channel(CHANNEL_SIZE);
         Self {
+            codec,
+            topics,
             request_sender,
-            dummy_tx,
             consensus_tx,
+            block_tx,
         }
     }
 
-    pub fn broadcast_message(&self, message: GossipMessage) -> anyhow::Result<()> {
-        let request = P2PRequest::BroadcastMessage(message);
-        self.request_sender.try_send(request)?;
-        Ok(())
+    pub fn subscribe_block(&self) -> broadcast::Receiver<Arc<FinalizedBlock>> {
+        self.block_tx.subscribe()
     }
 
-    pub fn subscribe_dummy(&self) -> broadcast::Receiver<IncomingDummyMessage> {
-        self.dummy_tx.subscribe()
+    async fn broadcast_network(&self, tag: GossipTopicTag, data: Vec<u8>) {
+        let topic_hash = self.topics.get_topic_hash(tag);
+        let request = P2PRequest::Broadcast(topic_hash, data);
+        self.request_sender
+            .send(request)
+            .await
+            .expect("Request receiver channel should never be closed");
+    }
+
+    fn relay_message_by_tag(&self, tag: GossipTopicTag, data: Vec<u8>) -> anyhow::Result<()> {
+        match tag {
+            GossipTopicTag::Consensus => {
+                let ibft_message = self.codec.deserialize(&data)?;
+                if let Err(err) = self.consensus_tx.try_send(ibft_message) {
+                    match err {
+                        mpsc::error::TrySendError::Closed(_) => {
+                            panic!("Consensus message receiver should never be closed")
+                        }
+                        mpsc::error::TrySendError::Full(_) => {
+                            warn!("Consensus message channel is full")
+                        }
+                    }
+                }
+            }
+            GossipTopicTag::Block => {
+                let block = self.codec.deserialize(&data)?;
+                let _ = self.block_tx.send(Arc::new(block));
+            }
+        };
+        Ok(())
     }
 }
 
-impl p2p_service::Broadcast for P2PServiceProxy {
-    fn broadcast_dummy(&self, data: IncomingDummyMessage) -> anyhow::Result<()> {
-        self.dummy_tx.send(data)?;
-        Ok(())
-    }
-
-    fn broadcast_consensus(&self, data: IBFTMessage) -> anyhow::Result<()> {
-        self.consensus_tx.blocking_send(data)?;
-        Ok(())
-    }
-
-    fn broadcast_block(&self, _data: FinalizedBlock) -> anyhow::Result<()> {
-        unimplemented!("Broadcasting incoming finalized block is not yet implemented")
+impl p2p_service::Relayer for P2PServiceProxy {
+    fn relay_message(&self, topic_hash: TopicHash, data: Vec<u8>) -> anyhow::Result<()> {
+        let tag = self
+            .topics
+            .get_gossip_tag(&topic_hash)
+            .ok_or(anyhow!("Invalid topic hash"))?;
+        self.relay_message_by_tag(tag, data)
     }
 }
 
 #[async_trait]
 impl tonic_consensus::backend::Broadcast for P2PServiceProxy {
-    async fn broadcast(&self, message: IBFTMessage) -> anyhow::Result<()> {
-        let request = P2PRequest::BroadcastMessage(GossipMessage::Consensus(message));
-        self.request_sender.send(request).await?;
-        Ok(())
+    async fn broadcast_message(&self, message: &IBFTMessage) {
+        let data = self
+            .codec
+            .serialize(message)
+            .expect("IBFT message serialization should not fail");
+
+        self.broadcast_network(GossipTopicTag::Consensus, data)
+            .await;
     }
 
-    async fn broadcast_block(&self, block: FinalizedBlock) -> anyhow::Result<()> {
-        let request = P2PRequest::BroadcastMessage(GossipMessage::Block(block));
-        self.request_sender.send(request).await?;
-        Ok(())
+    async fn broadcast_block(&self, block: &FinalizedBlock) {
+        let data = self
+            .codec
+            .serialize(block)
+            .expect("Finalized block serialization should not fail");
+
+        self.broadcast_network(GossipTopicTag::Block, data).await;
     }
 }
 
 /// Builds proxy with a sender channel.
 /// Returns proxy and the receiver channel.
-pub fn build_proxy() -> (
+pub fn build_proxy(
+    network_name: &str,
+) -> (
     P2PServiceProxy,
     mpsc::Receiver<P2PRequest>,
     mpsc::Receiver<IBFTMessage>,
@@ -80,7 +123,7 @@ pub fn build_proxy() -> (
     let (request_sender, request_receiver) = mpsc::channel(CHANNEL_SIZE);
     let (consensus_tx, consensus_rx) = mpsc::channel(CHANNEL_SIZE);
     (
-        P2PServiceProxy::new(request_sender, consensus_tx),
+        P2PServiceProxy::new(network_name, request_sender, consensus_tx),
         request_receiver,
         consensus_rx,
     )

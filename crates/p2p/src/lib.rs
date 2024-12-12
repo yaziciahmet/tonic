@@ -7,7 +7,6 @@ pub mod p2p_proxy;
 pub mod p2p_service;
 
 pub use config::*;
-pub use gossipsub::GossipMessage;
 use libp2p::multiaddr::Protocol;
 pub use libp2p::{Multiaddr, PeerId};
 pub use p2p_proxy::*;
@@ -33,8 +32,10 @@ mod tests {
 
     use libp2p::identity::Keypair;
     use libp2p::{Multiaddr, PeerId};
+    use tonic_consensus::backend::Broadcast;
+    use tonic_consensus::types::{FinalizedBlock, ProposedBlock};
 
-    use super::{build_proxy, Config, GossipMessage, P2PService, P2PServiceProxy};
+    use super::{build_proxy, Config, P2PService, P2PServiceProxy};
 
     async fn initialize_node(
         tcp_port: u16,
@@ -50,7 +51,7 @@ mod tests {
             bootstrap_nodes,
         };
 
-        let (p2p_proxy, request_receiver, _) = build_proxy();
+        let (p2p_proxy, request_receiver, _) = build_proxy(&config.network_name);
         let mut p2p = P2PService::new(config, request_receiver, p2p_proxy.clone());
         p2p.listen().await;
 
@@ -77,46 +78,44 @@ mod tests {
     #[tokio::test]
     async fn gossipsub_messaging() {
         let (node1_proxy, node1_peer_id, node1_addr) = initialize_node(0, vec![]).await;
-        let (node2_proxy, node2_peer_id, _) =
+        let (node2_proxy, _, _) =
             initialize_node(0, vec![node1_addr.with_p2p(node1_peer_id).unwrap()]).await;
 
-        let mut node1_rx = node1_proxy.subscribe_dummy();
-        let mut node2_rx = node2_proxy.subscribe_dummy();
+        let mut node1_rx = node1_proxy.subscribe_block();
+        let mut node2_rx = node2_proxy.subscribe_block();
 
         // Node1 broadcasts message
-        let value = 69;
+        let block = FinalizedBlock::new(ProposedBlock::new(vec![1, 2, 3], 0), vec![]);
         node1_proxy
-            .broadcast_message(GossipMessage::Dummy(value))
-            .unwrap();
+            .broadcast_block(&block)
+            .await;
 
         // Node2 should receive from Node1
-        let (received_value, received_peer_id) =
-            tokio::time::timeout(Duration::from_secs(1), node2_rx.recv())
-                .await
-                .unwrap()
-                .unwrap();
+        let received_block = tokio::time::timeout(Duration::from_secs(1), node2_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
 
-        assert_eq!(value, received_value);
-        assert_eq!(node1_peer_id, received_peer_id);
+        assert_eq!(received_block.raw_eth_block(), vec![1, 2, 3]);
+        assert_eq!(received_block.proof().round(), 0);
 
         // Ensure that Node1 didn't receive its own message
         assert!(node1_rx.try_recv().is_err());
 
         // Node2 broadcasts message
-        let value = 42;
+        let block = FinalizedBlock::new(ProposedBlock::new(vec![4, 5, 6], 0), vec![]);
         node2_proxy
-            .broadcast_message(GossipMessage::Dummy(value))
-            .unwrap();
+            .broadcast_block(&block)
+            .await;
 
         //  Node1 should receive from Node2
-        let (received_value, received_peer_id) =
-            tokio::time::timeout(Duration::from_secs(1), node1_rx.recv())
+        let received_block = tokio::time::timeout(Duration::from_secs(1), node1_rx.recv())
                 .await
                 .unwrap()
                 .unwrap();
 
-        assert_eq!(value, received_value);
-        assert_eq!(node2_peer_id, received_peer_id);
+        assert_eq!(received_block.raw_eth_block(), vec![4, 5, 6]);
+        assert_eq!(received_block.proof().round(), 0);
 
         // Ensure that Node2 didn't receive its own message
         assert!(node2_rx.try_recv().is_err());

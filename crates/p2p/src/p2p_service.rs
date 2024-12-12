@@ -1,42 +1,25 @@
 use std::time::Duration;
 
 use futures::StreamExt;
-use libp2p::gossipsub::{self, MessageId};
+use libp2p::gossipsub::{self, MessageId, TopicHash};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 use tokio::select;
 use tokio::sync::mpsc;
-use tonic_consensus::types::{FinalizedBlock, IBFTMessage};
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
 use crate::config::Config;
-use crate::gossipsub::{GossipCodec, GossipMessage, GossipTopics};
 
 #[derive(Debug)]
 pub enum P2PRequest {
-    BroadcastMessage(GossipMessage),
-}
-
-const MAX_MESSAGE_SIZE: usize = 1024 * 1024 * 4; // 4 MB
-
-struct NetworkMetadata {
-    codec: GossipCodec,
-    topics: GossipTopics,
-}
-
-impl NetworkMetadata {
-    fn new(p2p_config: &Config) -> Self {
-        let codec = GossipCodec::new(MAX_MESSAGE_SIZE);
-        let topics = GossipTopics::new(&p2p_config.network_name);
-        Self { codec, topics }
-    }
+    Broadcast(TopicHash, Vec<u8>),
 }
 
 /// [`P2PService`] is the core component of the libp2p network layer.
 /// It sits in the center of both any P2P activity including handling
 /// incoming and outgoing messages and connections to peers.
-pub struct P2PService<B: Broadcast> {
+pub struct P2PService<R: Relayer> {
     /// Local peer id
     pub local_peer_id: PeerId,
 
@@ -50,22 +33,19 @@ pub struct P2PService<B: Broadcast> {
     /// Request receiver channel
     request_receiver: mpsc::Receiver<P2PRequest>,
 
-    /// P2P event broadcaster
-    broadcast: B,
+    /// P2P event relayer
+    relayer: R,
 
     /// TCP port to listen. Keep in mind if value 0 is provided
     /// the value will be updated on start.
     tcp_port: u16,
-
-    /// Network metadata
-    network_metadata: NetworkMetadata,
 }
 
-impl<B> P2PService<B>
+impl<R> P2PService<R>
 where
-    B: Broadcast,
+    R: Relayer,
 {
-    pub fn new(config: Config, request_receiver: mpsc::Receiver<P2PRequest>, broadcast: B) -> Self {
+    pub fn new(config: Config, request_receiver: mpsc::Receiver<P2PRequest>, relayer: R) -> Self {
         let swarm = SwarmBuilder::with_existing_identity(config.keypair.clone())
             .with_tokio()
             .with_tcp(
@@ -87,16 +67,13 @@ where
 
         let local_peer_id = config.keypair.public().to_peer_id();
 
-        let network_metadata = NetworkMetadata::new(&config);
-
         Self {
             local_peer_id,
             swarm,
             request_receiver,
-            broadcast,
+            relayer,
             tcp_port: config.tcp_port,
             address: None,
-            network_metadata,
         }
     }
 
@@ -131,12 +108,11 @@ where
         }
     }
 
-    #[instrument(level = "debug", skip_all, fields (local_peer_id = %self.local_peer_id, address = %self.address.as_ref().unwrap()))]
     pub async fn run(&mut self) {
         loop {
             select! {
                 event = self.swarm.select_next_some() => {
-                    trace!(?event);
+                    trace!("Received event from peer: {:?}", event);
                     #[allow(clippy::single_match)]
                     match event {
                         SwarmEvent::Behaviour(event) => {
@@ -147,12 +123,11 @@ where
                         _ => {},
                     }
                 }
-                request = self.request_receiver.recv() => {
-                    let request = request.expect("P2P request should not be empty");
-                    trace!(?request);
+                Some(request) = self.request_receiver.recv() => {
+                    trace!("Received request: {:?}", request);
                     match request {
-                        P2PRequest::BroadcastMessage(message) => {
-                            if let Err(err) = self.publish_message(message) {
+                        P2PRequest::Broadcast(topic_hash, data) => {
+                            if let Err(err) = self.publish_message(topic_hash, data) {
                                 error!("Failed to broadcast gossip message: {}", err);
                             }
                         }
@@ -173,67 +148,37 @@ where
         match event {
             gossipsub::Event::Message {
                 propagation_source,
-                message_id,
                 message,
+                ..
             } => {
-                let Some(tag) = self.network_metadata.topics.get_gossip_tag(&message.topic) else {
-                    // TODO: lower peer score
-                    return Ok(());
-                };
-                match self.network_metadata.codec.deserialize(&tag, &message.data) {
-                    Ok(decoded_message) => {
-                        self.handle_gossipsub_message(decoded_message, propagation_source)
-                    }
-                    Err(err) => {
-                        warn!(
-                            ?message_id,
-                            ?propagation_source,
-                            ?message,
-                            ?err,
-                            "Failed to deserialize gossip message"
-                        );
-                        // TODO: lower peer score
-                        Ok(())
-                    }
+                if let Err(err) = self.relayer.relay_message(message.topic, message.data) {
+                    warn!(
+                        "Received malformed message. err = {} peer = {:?} propagating_peer = {:?}",
+                        err, message.source, propagation_source
+                    );
+                    // TODO: report peer
                 }
+
+                Ok(())
             }
             _ => Ok(()),
         }
     }
 
-    fn handle_gossipsub_message(
-        &self,
-        message: GossipMessage,
-        peer_id: PeerId,
-    ) -> anyhow::Result<()> {
-        debug!(gossip_message = ?message, ?peer_id);
-        match message {
-            GossipMessage::Dummy(value) => self.broadcast.broadcast_dummy((value, peer_id)),
-            GossipMessage::Consensus(msg) => self.broadcast.broadcast_consensus(msg),
-            GossipMessage::Block(block) => self.broadcast.broadcast_block(block),
-        }
-    }
-
-    fn publish_message(&mut self, message: GossipMessage) -> anyhow::Result<MessageId> {
-        let topic_hash = self
-            .network_metadata
-            .topics
-            .get_topic_hash_from_message(&message);
-        let encoded_data = self.network_metadata.codec.serialize(&message)?;
-
+    fn publish_message(
+        &mut self,
+        topic_hash: TopicHash,
+        data: Vec<u8>,
+    ) -> anyhow::Result<MessageId> {
         Ok(self
             .swarm
             .behaviour_mut()
-            .publish_message(topic_hash, encoded_data)?)
+            .publish_message(topic_hash, data)?)
     }
 }
 
-pub type IncomingDummyMessage = (u64, PeerId);
-
-pub trait Broadcast {
-    fn broadcast_dummy(&self, data: IncomingDummyMessage) -> anyhow::Result<()>;
-
-    fn broadcast_consensus(&self, data: IBFTMessage) -> anyhow::Result<()>;
-
-    fn broadcast_block(&self, data: FinalizedBlock) -> anyhow::Result<()>;
+pub trait Relayer {
+    /// Relay the incoming P2P message to interested application components.
+    /// Should return error if message is malformed.
+    fn relay_message(&self, topic_hash: TopicHash, data: Vec<u8>) -> anyhow::Result<()>;
 }

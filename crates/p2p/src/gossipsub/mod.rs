@@ -1,12 +1,10 @@
 mod codec;
-mod messages;
 mod topics;
 
 use std::time::Duration;
 
 pub use codec::*;
 use libp2p::gossipsub::{self, MessageAuthenticity, MessageId, Sha256Topic};
-pub use messages::*;
 use sha2::{Digest, Sha256};
 pub use topics::*;
 
@@ -20,9 +18,9 @@ pub fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
     .expect("Gossipsub behaviour should be initialized");
 
     let topics = if p2p_config.is_validator {
-        vec![DUMMY_TOPIC, CONSENSUS_TOPIC]
+        vec![CONSENSUS_TOPIC, BLOCK_TOPIC]
     } else {
-        vec![DUMMY_TOPIC]
+        vec![BLOCK_TOPIC]
     };
     // Subscribe to gossip topics
     for topic in topics {
