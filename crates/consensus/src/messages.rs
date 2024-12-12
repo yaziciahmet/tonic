@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use tokio::sync::{broadcast, mpsc, Mutex};
-use tonic_primitives::Address;
+use tonic_primitives::{Address, PrimitiveSignature};
 use tracing::warn;
 
 use crate::backend::ValidatorManager;
@@ -57,8 +57,9 @@ where
         }
     }
 
-    /// Handle incoming p2p message. Validates that the message sender is a validator,
-    /// and if proposal, the message sender is proposer.
+    /// Handle incoming p2p message. Verifies that the message sender is a validator,
+    /// and if proposal, the message sender is proposer. For commit messages, it also
+    /// verifies that the commit seal signer and message signer matches.
     async fn handle_consensus_message(&self, message: IBFTMessage) -> anyhow::Result<()> {
         match message {
             IBFTMessage::Proposal(proposal) => {
@@ -103,7 +104,9 @@ where
 
                 let seal_sender = commit.recover_commit_seal_signer()?;
                 if sender != seal_sender {
-                    return Err(anyhow!("Commit seal signer is different from message signer"));
+                    return Err(anyhow!(
+                        "Commit seal signer is different from message signer"
+                    ));
                 }
 
                 self.messages.add_commit_message(commit, sender).await;
@@ -280,6 +283,26 @@ impl ConsensusMessages {
         messages.retain(|_, prepare| verify_fn(prepare));
 
         messages.len()
+    }
+
+    pub async fn get_valid_commit_message_seals<F>(
+        &self,
+        view: View,
+        verify_fn: F,
+    ) -> Vec<PrimitiveSignature>
+    where
+        F: Fn(&CommitMessageSigned) -> bool,
+    {
+        let mut commit_messages = self.commit_messages.lock().await;
+        let messages = commit_messages.view_entry(view).or_default();
+
+        // Prune invalid messages
+        messages.retain(|_, commit| verify_fn(commit));
+
+        messages
+            .values()
+            .map(|commit| commit.commit_seal())
+            .collect()
     }
 
     pub async fn get_valid_round_change_messages<F>(

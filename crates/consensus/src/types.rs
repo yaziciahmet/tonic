@@ -259,6 +259,14 @@ impl CommitMessage {
         self.view
     }
 
+    pub fn proposed_block_digest(&self) -> [u8; 32] {
+        self.proposed_block_digest
+    }
+
+    pub fn commit_seal(&self) -> PrimitiveSignature {
+        self.commit_seal
+    }
+
     pub fn recover_commit_seal_signer(&self) -> anyhow::Result<Address> {
         Ok(self
             .commit_seal
@@ -294,6 +302,14 @@ pub struct CommitMessageSigned {
 impl CommitMessageSigned {
     pub fn view(&self) -> View {
         self.message.view
+    }
+
+    pub fn proposed_block_digest(&self) -> [u8; 32] {
+        self.message.proposed_block_digest
+    }
+
+    pub fn commit_seal(&self) -> PrimitiveSignature {
+        self.message.commit_seal
     }
 
     pub fn recover_commit_seal_signer(&self) -> anyhow::Result<Address> {

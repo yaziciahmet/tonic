@@ -8,7 +8,10 @@ use tonic_signer::Signer;
 use tracing::info;
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
-use crate::types::{CommitMessage, IBFTMessage, PrepareMessage, PrepareMessageSigned, ProposalMessage};
+use crate::types::{
+    CommitMessage, CommitMessageSigned, IBFTMessage, PrepareMessage, PrepareMessageSigned,
+    ProposalMessage,
+};
 
 use super::messages::ConsensusMessages;
 use super::types::View;
@@ -186,9 +189,11 @@ where
             proposal
         };
 
+        // Go to prepare state
         state.set_state(RunState::Prepare).await;
 
         let proposed_block_digest = proposal.proposed_block_digest();
+        let quorum = self.validator_manager.quorum(view.height);
 
         // Add the prepare to messages and broadcast it
         let prepare =
@@ -208,7 +213,6 @@ where
             .messages
             .get_valid_prepare_message_count(view, &prepare_verifier_fn)
             .await;
-        let quorum = self.validator_manager.quorum(view.height);
         // Wait for new prepare messages until we hit quorum
         while valid_prepare_count < quorum {
             let prepare = prepare_rx
@@ -224,14 +228,37 @@ where
         state.set_state(RunState::Commit).await;
 
         // Add the commit to messages and broadcast it
-        let commit =
-            Arc::new(CommitMessage::new(view, proposed_block_digest, &self.signer).into_signed(&self.signer));
+        let commit = Arc::new(
+            CommitMessage::new(view, proposed_block_digest, &self.signer).into_signed(&self.signer),
+        );
         self.messages
             .add_commit_message(commit.clone(), self.signer.address())
             .await;
         self.broadcast
             .broadcast(IBFTMessage::Commit(commit))
             .await?;
+
+        let commit_verifier_fn = get_commit_verifier(view, proposed_block_digest);
+        // Subscribe to commit messages first
+        let mut commit_rx = self.messages.subscribe_commit();
+        // Get valid commit message count
+        let mut valid_commit_seals = self
+            .messages
+            .get_valid_commit_message_seals(view, &commit_verifier_fn)
+            .await;
+        // Wait for new prepare messages until we hit quorum
+        while valid_commit_seals.len() < quorum {
+            let commit = commit_rx
+                .recv()
+                .await
+                .expect("Commit subscriber channel should not close");
+            if commit_verifier_fn(&commit) {
+                valid_commit_seals.push(commit.commit_seal());
+            }
+        }
+
+        // Go to finalized state
+        state.set_state(RunState::Finalized).await;
 
         Ok(())
     }
@@ -324,5 +351,16 @@ fn get_prepare_verifier(
 ) -> impl Fn(&PrepareMessageSigned) -> bool {
     move |prepare| -> bool {
         prepare.view() == view && prepare.proposed_block_digest() == proposed_block_digest
+    }
+}
+
+/// Returns the closure to verify commit messages. It doesn't verify signature
+/// and validators since it is already ensured by the `ConsensusMessages`.
+fn get_commit_verifier(
+    view: View,
+    proposed_block_digest: [u8; 32],
+) -> impl Fn(&CommitMessageSigned) -> bool {
+    move |commit| -> bool {
+        commit.view() == view && commit.proposed_block_digest() == proposed_block_digest
     }
 }
