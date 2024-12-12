@@ -10,7 +10,7 @@ use tracing::{error, info};
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTMessage, PrepareMessage,
-    PrepareMessageSigned, ProposalMessage,
+    PrepareMessageSigned, ProposalMessage, RoundChangeMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -287,15 +287,22 @@ where
         Ok(valid_commit_seals)
     }
 
-    fn watch_rcc(&self, _state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_rcc(&self, state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
+        let ibft = self.clone();
         let task = tokio::spawn(async move {
-            // TODO: actually watch for rcc
-            tokio::time::sleep(Duration::from_secs(9999)).await;
+            ibft.wait_until_rcc(state).await;
             let _ = tx.send(());
         });
 
         (rx, task)
+    }
+
+    async fn wait_until_rcc(&self, state: SharedRunState) {
+        let view = state.view;
+
+        let round_change_rx = self.messages.subscribe_round_change();
+        todo!()
     }
 
     fn watch_future_proposal(
