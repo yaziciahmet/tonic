@@ -17,6 +17,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+tonic = { workspace = true }
+
 [features]
 default = []
 test-helpers = ["tonic-signer/test-helpers"]

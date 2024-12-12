@@ -53,6 +53,7 @@ mod tests {
 
     #[tokio::test]
     async fn ibft_run() {
+        tonic::initialize_tracing(tracing::Level::DEBUG);
         let mock = Mock {};
         let signer = Signer::random();
         let engine =

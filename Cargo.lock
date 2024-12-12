@@ -4848,6 +4848,7 @@ dependencies = [
  "borsh",
  "thiserror 2.0.5",
  "tokio",
+ "tonic",
  "tonic-primitives",
  "tonic-signer",
  "tracing",
