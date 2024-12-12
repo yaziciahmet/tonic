@@ -8,7 +8,7 @@ use tonic_signer::Signer;
 use tracing::info;
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
-use crate::types::{IBFTMessage, PrepareMessage, ProposalMessage};
+use crate::types::{IBFTMessage, PrepareMessage, PrepareMessageSigned, ProposalMessage};
 
 use super::messages::ConsensusMessages;
 use super::types::View;
@@ -188,16 +188,40 @@ where
 
         state.set_state(RunState::Prepare).await;
 
+        let proposed_block_digest = proposal.proposed_block_digest();
+
         // Add the prepare to messages and broadcast it
-        let prepare = Arc::new(
-            PrepareMessage::new(view, proposal.proposed_block().digest()).into_signed(&self.signer),
-        );
+        let prepare =
+            Arc::new(PrepareMessage::new(view, proposed_block_digest).into_signed(&self.signer));
         self.messages
             .add_prepare_message(prepare.clone(), self.signer.address())
             .await;
         self.broadcast
             .broadcast(IBFTMessage::Prepare(prepare))
             .await?;
+
+        let prepare_verifier_fn = get_prepare_verifier(view.round, proposed_block_digest);
+        // Subscribe to prepare messages first
+        let mut prepare_rx = self.messages.subscribe_prepare();
+        // Get valid prepare message count
+        let mut valid_prepare_count = self
+            .messages
+            .get_valid_prepare_message_count(view, &prepare_verifier_fn)
+            .await;
+        let quorum = self.validator_manager.quorum(view.height);
+        // Wait for new prepare messages until we hit quorum
+        while valid_prepare_count < quorum {
+            let prepare = prepare_rx
+                .recv()
+                .await
+                .expect("Prepare subscriber channel should not close");
+            if prepare_verifier_fn(&prepare) {
+                valid_prepare_count += 1;
+            }
+        }
+
+        // Go to commit state
+        state.set_state(RunState::Commit).await;
 
         Ok(())
     }
@@ -256,7 +280,7 @@ impl SharedRunState {
         *self.state.write().await = new_state;
     }
 
-    async fn accepted_proposal(&self) -> bool {
+    async fn proposal_accepted(&self) -> bool {
         *self.state.read().await != RunState::Proposal
     }
 }
@@ -280,4 +304,15 @@ enum IBFTError {
     InvalidBlock(anyhow::Error),
     #[error("{0}")]
     Other(#[from] anyhow::Error),
+}
+
+/// Returns the closure to verify prepare messages. It doesn't verify signature
+/// and validators since it is already ensured by the `ConsensusMessages`.
+fn get_prepare_verifier(
+    round: u32,
+    proposed_block_digest: [u8; 32],
+) -> impl Fn(&PrepareMessageSigned) -> bool {
+    move |prepare| -> bool {
+        prepare.view().round == round && prepare.proposed_block_digest() == proposed_block_digest
+    }
 }

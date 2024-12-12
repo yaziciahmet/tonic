@@ -264,10 +264,23 @@ impl ConsensusMessages {
         self.round_change_tx.subscribe()
     }
 
+    pub async fn get_valid_prepare_message_count<F>(&self, view: View, verify_fn: F) -> usize
+    where
+        F: Fn(&PrepareMessageSigned) -> bool,
+    {
+        let mut prepare_messages = self.prepare_messages.lock().await;
+        let messages = prepare_messages.view_entry(view).or_default();
+
+        // Prune invalid messages
+        messages.retain(|_, prepare| verify_fn(prepare));
+
+        messages.len()
+    }
+
     pub async fn get_valid_round_change_messages<F>(
         &self,
         view: View,
-        validate_fn: F,
+        verify_fn: F,
     ) -> Vec<Arc<RoundChangeMessageSigned>>
     where
         F: Fn(&RoundChangeMessageSigned) -> bool,
@@ -276,7 +289,7 @@ impl ConsensusMessages {
         let messages = round_change_messages.view_entry(view).or_default();
 
         // Prune invalid messages
-        messages.retain(|_, round_change| validate_fn(round_change));
+        messages.retain(|_, round_change| verify_fn(round_change));
 
         messages.values().cloned().collect()
     }

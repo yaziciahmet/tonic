@@ -118,6 +118,10 @@ impl ProposalMessage {
         &self.proposed_block
     }
 
+    pub fn proposed_block_digest(&self) -> [u8; 32] {
+        self.proposed_block_digest
+    }
+
     fn data_to_sign(&self) -> B256 {
         let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
         keccak256(bytes)
@@ -150,6 +154,10 @@ impl ProposalMessageSigned {
 
     pub fn proposed_block(&self) -> &ProposedBlock {
         &self.message.proposed_block
+    }
+
+    pub fn proposed_block_digest(&self) -> [u8; 32] {
+        self.message.proposed_block_digest
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
@@ -185,6 +193,10 @@ impl PrepareMessage {
         self.view
     }
 
+    pub fn proposed_block_digest(&self) -> [u8; 32] {
+        self.proposed_block_digest
+    }
+
     fn data_to_sign(&self) -> B256 {
         let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
         keccak256(bytes)
@@ -209,6 +221,10 @@ pub struct PrepareMessageSigned {
 impl PrepareMessageSigned {
     pub fn view(&self) -> View {
         self.message.view
+    }
+
+    pub fn proposed_block_digest(&self) -> [u8; 32] {
+        self.message.proposed_block_digest
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
@@ -346,7 +362,7 @@ impl ProposedBlock {
 }
 
 impl ProposedBlock {
-    pub fn digest(&self) -> [u8; 32] {
+    fn digest(&self) -> [u8; 32] {
         let bytes = codec::serialize(self);
         *keccak256(bytes)
     }
