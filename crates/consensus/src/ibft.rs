@@ -3,9 +3,8 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use tokio::select;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
-use tonic_primitives::PrimitiveSignature;
 use tonic_signer::Signer;
 use tracing::info;
 
@@ -13,7 +12,7 @@ use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{IBFTMessage, ProposalMessage};
 
 use super::messages::ConsensusMessages;
-use super::types::{PrepareMessage, PreparedCertificate, ProposedBlock, View};
+use super::types::View;
 
 const TIMEOUT_TABLE: [Duration; 6] = [
     Duration::from_secs(4),
@@ -72,10 +71,13 @@ where
         loop {
             info!("Running consensus round {}", view.round);
 
+            let state = SharedRunState::new(view);
+
             let timeout = tokio::time::sleep(get_round_timeout(view.round));
-            let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
-            let (rcc_rx, rcc_task) = self.watch_rcc(view);
-            let (round_finished, round_task) = self.start_ibft_round(view);
+            let (future_proposal_rx, future_proposal_task) =
+                self.watch_future_proposal(state.clone());
+            let (rcc_rx, rcc_task) = self.watch_rcc(state.clone());
+            let (round_finished, round_task) = self.start_ibft_round(state);
 
             let abort = move || {
                 round_task.abort();
@@ -112,19 +114,21 @@ where
         }
     }
 
-    fn start_ibft_round(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn start_ibft_round(&self, state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
 
         let task = tokio::spawn(async move {
-            let _ = ibft.run_ibft_round0(view).await;
+            let _ = ibft.run_ibft_round0(state).await;
             let _ = tx.send(());
         });
 
         (rx, task)
     }
 
-    async fn run_ibft_round0(&self, view: View) -> anyhow::Result<()> {
+    async fn run_ibft_round0(&self, state: SharedRunState) -> anyhow::Result<()> {
+        let view = state.view;
+
         assert_eq!(view.round, 0, "round must be 0");
 
         let proposal = if self
@@ -178,10 +182,12 @@ where
             proposal
         };
 
+        state.set_state(RunState::Prepare).await;
+
         Ok(())
     }
 
-    fn watch_rcc(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_rcc(&self, _state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             // TODO: actually watch for rcc
@@ -192,7 +198,10 @@ where
         (rx, task)
     }
 
-    fn watch_future_proposal(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_future_proposal(
+        &self,
+        _state: SharedRunState,
+    ) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             // TODO: actually watch for future proposal
@@ -212,29 +221,36 @@ fn get_round_timeout(mut round: u32) -> Duration {
     TIMEOUT_TABLE[round as usize]
 }
 
-#[derive(Debug)]
-struct RunState {
+/// `SharedRunState` is the shared state of the currently running IBFT
+/// consensus. Used for tracking the current step of the IBFT run.
+#[derive(Clone, Debug)]
+struct SharedRunState {
     view: View,
-    proposed_block: Option<ProposedBlock>,
-    proposed_block_digest: Option<[u8; 32]>,
-    valid_prepare_messages: Vec<PrepareMessage>,
-    latest_prepared_certificate: Option<PreparedCertificate>,
-    valid_commit_seals: Vec<PrimitiveSignature>,
+    state: Arc<RwLock<RunState>>,
 }
 
-impl RunState {
+impl SharedRunState {
     fn new(view: View) -> Self {
         Self {
             view,
-            proposed_block: None,
-            proposed_block_digest: None,
-            valid_prepare_messages: vec![],
-            latest_prepared_certificate: None,
-            valid_commit_seals: vec![],
+            state: Default::default(),
         }
     }
 
-    fn view(&self) -> View {
-        self.view
+    async fn set_state(&self, new_state: RunState) {
+        *self.state.write().await = new_state;
     }
+
+    async fn accepted_proposal(&self) -> bool {
+        *self.state.read().await != RunState::Proposal
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+enum RunState {
+    #[default]
+    Proposal,
+    Prepare,
+    Commit,
+    Finalized,
 }
