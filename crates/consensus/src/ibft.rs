@@ -126,7 +126,7 @@ where
         (rx, task)
     }
 
-    async fn run_ibft_round0(&self, state: SharedRunState) -> anyhow::Result<()> {
+    async fn run_ibft_round0(&self, state: SharedRunState) -> Result<(), IBFTError> {
         let view = state.view;
 
         assert_eq!(view.round, 0, "round must be 0");
@@ -169,18 +169,18 @@ where
             let proposed_block = proposal.proposed_block();
             // Verify proposed block's round
             if proposed_block.round() != view.round {
-                return Err(anyhow!("Invalid proposed block round"));
+                return Err(IBFTError::IncorrectProposedBlockRound);
             }
             // Verify proposed block digest
             if !proposal.verify_digest() {
-                return Err(anyhow!("Invalid proposed block digest"));
+                return Err(IBFTError::IncorrectProposalDigest);
             }
             // Verify ethereum block
             if let Err(err) = self
                 .block_verifier
                 .verify_block(proposed_block.raw_eth_block())
             {
-                return Err(anyhow!("Invalid ethereum block: {err}"));
+                return Err(IBFTError::InvalidBlock(err));
             }
 
             proposal
@@ -257,4 +257,16 @@ enum RunState {
     Prepare,
     Commit,
     Finalized,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum IBFTError {
+    #[error("Incorrect proposed block round")]
+    IncorrectProposedBlockRound,
+    #[error("Incorrect proposal digest")]
+    IncorrectProposalDigest,
+    #[error("Invalid block: {0}")]
+    InvalidBlock(anyhow::Error),
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }

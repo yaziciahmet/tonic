@@ -12,6 +12,7 @@ tonic-signer = { workspace = true }
 
 anyhow = { workspace = true }
 borsh = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

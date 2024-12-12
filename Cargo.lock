@@ -4845,6 +4845,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "borsh",
+ "thiserror 2.0.5",
  "tokio",
  "tonic-primitives",
  "tonic-signer",
