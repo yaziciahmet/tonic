@@ -310,6 +310,8 @@ where
         let proposal = state.finalize().await;
         let finalized_block = FinalizedBlock::new(proposal.into_proposed_block(), commit_seals);
 
+        debug!("Created finalized block");
+
         Ok(finalized_block)
     }
 
