@@ -2,6 +2,7 @@
 members = [
     "bin/tonic",
     "crates/consensus",
+    "crates/consensus2",
     "crates/database",
     "crates/p2p",
     "crates/primitives",

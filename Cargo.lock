@@ -4854,6 +4854,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic-consensus2"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "borsh",
+ "thiserror 2.0.5",
+ "tokio",
+ "tonic-primitives",
+ "tonic-signer",
+ "tracing",
+]
+
+[[package]]
 name = "tonic-database"
 version = "0.1.0"
 dependencies = [
