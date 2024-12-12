@@ -188,6 +188,7 @@ where
 
         state.set_state(RunState::Prepare).await;
 
+        // Add the prepare to messages and broadcast it
         let prepare = Arc::new(
             PrepareMessage::new(view, proposal.proposed_block().digest()).into_signed(&self.signer),
         );
