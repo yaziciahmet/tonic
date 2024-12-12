@@ -8,7 +8,7 @@ use tonic_signer::Signer;
 use tracing::info;
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
-use crate::types::{IBFTMessage, PrepareMessage, PrepareMessageSigned, ProposalMessage};
+use crate::types::{CommitMessage, IBFTMessage, PrepareMessage, PrepareMessageSigned, ProposalMessage};
 
 use super::messages::ConsensusMessages;
 use super::types::View;
@@ -222,6 +222,16 @@ where
 
         // Go to commit state
         state.set_state(RunState::Commit).await;
+
+        // Add the commit to messages and broadcast it
+        let commit =
+            Arc::new(CommitMessage::new(view, proposed_block_digest, &self.signer).into_signed(&self.signer));
+        self.messages
+            .add_commit_message(commit.clone(), self.signer.address())
+            .await;
+        self.broadcast
+            .broadcast(IBFTMessage::Commit(commit))
+            .await?;
 
         Ok(())
     }

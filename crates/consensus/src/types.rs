@@ -242,6 +242,15 @@ pub struct CommitMessage {
 }
 
 impl CommitMessage {
+    pub fn new(view: View, proposed_block_digest: [u8; 32], signer: &Signer) -> Self {
+        let commit_seal = signer.sign_prehashed(proposed_block_digest.into());
+        Self {
+            view,
+            proposed_block_digest,
+            commit_seal,
+        }
+    }
+
     pub fn ty(&self) -> MessageType {
         MessageType::Commit
     }
