@@ -101,6 +101,11 @@ where
                     return Err(anyhow!("Message sender is not validator"));
                 }
 
+                let seal_sender = commit.recover_commit_seal_signer()?;
+                if sender != seal_sender {
+                    return Err(anyhow!("Commit seal signer is different from message signer"));
+                }
+
                 self.messages.add_commit_message(commit, sender).await;
             }
             IBFTMessage::RoundChange(round_change) => {

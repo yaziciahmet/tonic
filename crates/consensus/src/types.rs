@@ -259,6 +259,12 @@ impl CommitMessage {
         self.view
     }
 
+    pub fn recover_commit_seal_signer(&self) -> anyhow::Result<Address> {
+        Ok(self
+            .commit_seal
+            .recover_address_from_prehash(&self.proposed_block_digest.into())?)
+    }
+
     fn data_to_sign(&self) -> B256 {
         let bytes = codec::serialize(&(
             self.ty(),
@@ -288,6 +294,10 @@ pub struct CommitMessageSigned {
 impl CommitMessageSigned {
     pub fn view(&self) -> View {
         self.message.view
+    }
+
+    pub fn recover_commit_seal_signer(&self) -> anyhow::Result<Address> {
+        self.message.recover_commit_seal_signer()
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
