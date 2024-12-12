@@ -140,7 +140,10 @@ where
             info!("We are the block proposer");
 
             // Build a block
-            let raw_eth_block = self.block_builder.build_block(view.height)?;
+            let raw_eth_block = self
+                .block_builder
+                .build_block(view.height)
+                .map_err(IBFTError::BlockBuild)?;
             let proposal =
                 Arc::new(ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer));
 
@@ -148,7 +151,8 @@ where
             self.messages.add_proposal_message(proposal.clone()).await;
             self.broadcast
                 .broadcast(IBFTMessage::Proposal(proposal.clone()))
-                .await?;
+                .await
+                .map_err(IBFTError::P2PBroadcast)?;
 
             proposal
         } else {
@@ -203,7 +207,8 @@ where
             .await;
         self.broadcast
             .broadcast(IBFTMessage::Prepare(prepare))
-            .await?;
+            .await
+            .map_err(IBFTError::P2PBroadcast)?;
 
         let prepare_verifier_fn = get_prepare_verifier(view, proposed_block_digest);
         // Subscribe to prepare messages first
@@ -236,7 +241,8 @@ where
             .await;
         self.broadcast
             .broadcast(IBFTMessage::Commit(commit))
-            .await?;
+            .await
+            .map_err(IBFTError::P2PBroadcast)?;
 
         let commit_verifier_fn = get_commit_verifier(view, proposed_block_digest);
         // Subscribe to commit messages first
@@ -339,8 +345,10 @@ enum IBFTError {
     IncorrectProposalDigest,
     #[error("Invalid block: {0}")]
     InvalidBlock(anyhow::Error),
-    #[error("{0}")]
-    Other(#[from] anyhow::Error),
+    #[error("P2P broadcast failed: {0}")]
+    P2PBroadcast(anyhow::Error),
+    #[error("Block builder failed: {0}")]
+    BlockBuild(anyhow::Error),
 }
 
 /// Returns the closure to verify prepare messages. It doesn't verify signature
