@@ -4844,6 +4844,7 @@ name = "tonic-consensus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "borsh",
  "thiserror 2.0.5",
  "tokio",
@@ -4866,6 +4867,7 @@ name = "tonic-p2p"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "borsh",
  "futures",
  "libp2p",

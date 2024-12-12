@@ -11,6 +11,7 @@ tonic-primitives = { workspace = true }
 tonic-signer = { workspace = true }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 borsh = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

@@ -10,6 +10,7 @@ repository = { workspace = true }
 tonic-consensus = { workspace = true }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 borsh = { workspace = true }
 futures = { workspace = true }
 libp2p = { version = "0.54", default-features = false, features = [

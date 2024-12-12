@@ -144,7 +144,7 @@ where
             // Add the proposal to messages and broadcast it to peers
             self.messages.add_proposal_message(proposal.clone()).await;
             self.broadcast
-                .broadcast(IBFTMessage::Proposal(proposal.clone()))?;
+                .broadcast(IBFTMessage::Proposal(proposal.clone())).await?;
 
             proposal
         } else {
@@ -193,7 +193,7 @@ where
         self.messages
             .add_prepare_message(prepare.clone(), self.signer.address())
             .await;
-        self.broadcast.broadcast(IBFTMessage::Prepare(prepare))?;
+        self.broadcast.broadcast(IBFTMessage::Prepare(prepare)).await?;
 
         Ok(())
     }

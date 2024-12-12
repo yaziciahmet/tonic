@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use tokio::sync::{broadcast, mpsc};
 use tonic_consensus::types::IBFTMessage;
 
@@ -50,9 +51,12 @@ impl p2p_service::Broadcast for P2PServiceProxy {
     }
 }
 
+#[async_trait]
 impl tonic_consensus::backend::Broadcast for P2PServiceProxy {
-    fn broadcast(&self, message: IBFTMessage) -> anyhow::Result<()> {
-        self.broadcast_message(GossipMessage::Consensus(message))
+    async fn broadcast(&self, message: IBFTMessage) -> anyhow::Result<()> {
+        let request = P2PRequest::BroadcastMessage(GossipMessage::Consensus(message));
+        self.request_sender.send(request).await?;
+        Ok(())
     }
 }
 
