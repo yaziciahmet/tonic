@@ -142,7 +142,7 @@ where
             let proposal =
                 Arc::new(ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer));
 
-            // Add the block to messages and broadcast the proposal to peers
+            // Add the proposal to messages and broadcast it to peers
             self.messages.add_proposal_message(proposal.clone()).await;
             self.broadcast
                 .broadcast(IBFTMessage::Proposal(proposal.clone()))?;
