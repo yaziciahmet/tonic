@@ -86,9 +86,7 @@ mod tests {
 
         // Node1 broadcasts message
         let block = FinalizedBlock::new(ProposedBlock::new(vec![1, 2, 3], 0), vec![]);
-        node1_proxy
-            .broadcast_block(&block)
-            .await;
+        node1_proxy.broadcast_block(&block).await;
 
         // Node2 should receive from Node1
         let received_block = tokio::time::timeout(Duration::from_secs(1), node2_rx.recv())
@@ -104,15 +102,13 @@ mod tests {
 
         // Node2 broadcasts message
         let block = FinalizedBlock::new(ProposedBlock::new(vec![4, 5, 6], 0), vec![]);
-        node2_proxy
-            .broadcast_block(&block)
-            .await;
+        node2_proxy.broadcast_block(&block).await;
 
         //  Node1 should receive from Node2
         let received_block = tokio::time::timeout(Duration::from_secs(1), node1_rx.recv())
-                .await
-                .unwrap()
-                .unwrap();
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(received_block.raw_eth_block(), vec![4, 5, 6]);
         assert_eq!(received_block.proof().round(), 0);
