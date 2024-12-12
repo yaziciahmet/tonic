@@ -200,7 +200,7 @@ where
             .broadcast(IBFTMessage::Prepare(prepare))
             .await?;
 
-        let prepare_verifier_fn = get_prepare_verifier(view.round, proposed_block_digest);
+        let prepare_verifier_fn = get_prepare_verifier(view, proposed_block_digest);
         // Subscribe to prepare messages first
         let mut prepare_rx = self.messages.subscribe_prepare();
         // Get valid prepare message count
@@ -309,10 +309,10 @@ enum IBFTError {
 /// Returns the closure to verify prepare messages. It doesn't verify signature
 /// and validators since it is already ensured by the `ConsensusMessages`.
 fn get_prepare_verifier(
-    round: u32,
+    view: View,
     proposed_block_digest: [u8; 32],
 ) -> impl Fn(&PrepareMessageSigned) -> bool {
     move |prepare| -> bool {
-        prepare.view().round == round && prepare.proposed_block_digest() == proposed_block_digest
+        prepare.view() == view && prepare.proposed_block_digest() == proposed_block_digest
     }
 }
