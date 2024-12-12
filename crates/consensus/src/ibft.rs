@@ -10,9 +10,8 @@ use tracing::{debug, error, info};
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
-    CommitMessage, CommitMessageSigned, FinalizedBlock, IBFTBroadcastMessage,
-    PrepareMessage, PrepareMessageSigned, PreparedCertificate, ProposalMessage,
-    ProposalMessageSigned,
+    CommitMessage, CommitMessageSigned, FinalizedBlock, IBFTBroadcastMessage, PrepareMessage,
+    PrepareMessageSigned, PreparedCertificate, ProposalMessage, ProposalMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
