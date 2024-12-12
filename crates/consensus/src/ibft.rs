@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::anyhow;
 use tokio::select;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
