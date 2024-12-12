@@ -135,10 +135,14 @@ where
             .validator_manager
             .is_proposer(self.signer.address(), view)
         {
+            info!("We are the block proposer");
+
+            // Build a block
             let raw_eth_block = self.block_builder.build_block(view.height)?;
             let proposal =
                 Arc::new(ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer));
 
+            // Add the block to messages and broadcast the proposal to peers
             self.messages.add_proposal_message(proposal.clone()).await;
             self.broadcast
                 .broadcast(IBFTMessage::Proposal(proposal.clone()))?;
@@ -150,7 +154,7 @@ where
             let proposal = if let Some(proposal) = self.messages.get_proposal_message(view).await {
                 proposal
             } else {
-                // Wait until we receive a proposal for the given view
+                // Wait until we receive a proposal from peers for the given view
                 loop {
                     let proposal = proposal_rx
                         .recv()
