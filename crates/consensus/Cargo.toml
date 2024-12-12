@@ -19,4 +19,4 @@ tracing = { workspace = true }
 
 [features]
 default = []
-test-helpers = []
+test-helpers = ["tonic-signer/test-helpers"]

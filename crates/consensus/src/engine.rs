@@ -4,7 +4,7 @@ use tonic_signer::Signer;
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::ibft::IBFT;
 use crate::messages::{ConsensusMessages, MessageHandler};
-use crate::types::IBFTMessage;
+use crate::types::{FinalizedBlock, IBFTMessage};
 
 /// `ConsensusEngine` is the main wrapper that handles synchronization
 /// in between incoming P2P messages and the ongoing IBFT run.
@@ -53,11 +53,17 @@ where
     }
 
     /// Runs IBFT consensus for the given height.
-    pub async fn run_height(&self, height: u64, cancel_rx: oneshot::Receiver<()>) {
-        let _ibft_result = self.ibft.run(height, cancel_rx).await;
+    pub async fn run_height(
+        &self,
+        height: u64,
+        cancel_rx: oneshot::Receiver<()>,
+    ) -> Option<FinalizedBlock> {
+        let finalized_block = self.ibft.run(height, cancel_rx).await;
 
         self.message_handler.update_height(height);
         self.message_handler.prune().await;
+
+        finalized_block
     }
 
     /// Spawns a background tokio task which handles incoming P2P consensus messages.
