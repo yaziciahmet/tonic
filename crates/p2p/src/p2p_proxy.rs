@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use libp2p::gossipsub::TopicHash;
 use tokio::sync::{broadcast, mpsc};
-use tonic_consensus::types::{FinalizedBlock, IBFTMessage};
+use tonic_consensus::types::{FinalizedBlock, IBFTBroadcastMessage, IBFTReceivedMessage};
 use tracing::warn;
 
 use crate::gossipsub::{GossipCodec, GossipTopicTag, GossipTopics};
@@ -20,7 +20,7 @@ pub struct P2PServiceProxy {
 
     request_sender: mpsc::Sender<P2PRequest>,
     // Consensus messages have only one receiver, hence mpsc instead of broadcast
-    consensus_tx: mpsc::Sender<IBFTMessage>,
+    consensus_tx: mpsc::Sender<IBFTReceivedMessage>,
     block_tx: broadcast::Sender<Arc<FinalizedBlock>>,
 }
 
@@ -28,7 +28,7 @@ impl P2PServiceProxy {
     pub fn new(
         network_name: &str,
         request_sender: mpsc::Sender<P2PRequest>,
-        consensus_tx: mpsc::Sender<IBFTMessage>,
+        consensus_tx: mpsc::Sender<IBFTReceivedMessage>,
     ) -> Self {
         let codec = GossipCodec::new(MAX_MESSAGE_SIZE);
         let topics = GossipTopics::new(network_name);
@@ -91,10 +91,10 @@ impl p2p_service::Relayer for P2PServiceProxy {
 
 #[async_trait]
 impl tonic_consensus::backend::Broadcast for P2PServiceProxy {
-    async fn broadcast_message(&self, message: &IBFTMessage) {
+    async fn broadcast_message<'a>(&self, message: IBFTBroadcastMessage<'a>) {
         let data = self
             .codec
-            .serialize(message)
+            .serialize(&message)
             .expect("IBFT message serialization should not fail");
 
         self.broadcast_network(GossipTopicTag::Consensus, data)
@@ -118,7 +118,7 @@ pub fn build_proxy(
 ) -> (
     P2PServiceProxy,
     mpsc::Receiver<P2PRequest>,
-    mpsc::Receiver<IBFTMessage>,
+    mpsc::Receiver<IBFTReceivedMessage>,
 ) {
     let (request_sender, request_receiver) = mpsc::channel(CHANNEL_SIZE);
     let (consensus_tx, consensus_rx) = mpsc::channel(CHANNEL_SIZE);

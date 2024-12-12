@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,8 +10,8 @@ use tracing::{error, info};
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
-    CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTMessage, PrepareMessage,
-    PrepareMessageSigned, ProposalMessage, RoundChangeMessageSigned,
+    CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTBroadcastMessage,
+    PrepareMessage, PrepareMessageSigned, ProposalMessage,
 };
 
 use super::messages::ConsensusMessages;
@@ -116,7 +117,6 @@ where
                     abort();
 
                     let proposal = self.messages.take_proposal_message(view).await.expect("There must be a proposal when round is finished");
-                    let proposal = Arc::into_inner(proposal).expect("There should be no other strong references to current view's proposal");
                     let finalized_block = FinalizedBlock::new(proposal.into_proposed_block(), commit_seals);
                     return Some(finalized_block);
                 }
@@ -163,32 +163,35 @@ where
                 .build_block(view.height)
                 .map_err(IBFTError::BlockBuild)?;
             let proposal =
-                Arc::new(ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer));
+                ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer);
 
-            // Add the proposal to messages and broadcast it to peers
-            self.messages.add_proposal_message(proposal.clone()).await;
+            // Broadcast proposal to peers
             self.broadcast
-                .broadcast(IBFTMessage::Proposal(proposal.clone()))
-                .await
-                .map_err(IBFTError::P2PBroadcast)?;
+                .broadcast_message(IBFTBroadcastMessage::Proposal(&proposal))
+                .await;
 
             proposal
         } else {
             // We first subscribe so we don't miss the notification in the brief time we query the proposal.
             let mut proposal_rx = self.messages.subscribe_proposal();
-            let proposal = if let Some(proposal) = self.messages.get_proposal_message(view).await {
+            let proposal = if let Some(proposal) = self.messages.take_proposal_message(view).await {
                 proposal
             } else {
                 // Wait until we receive a proposal from peers for the given view
                 loop {
-                    let proposal = proposal_rx
+                    let proposal_view = proposal_rx
                         .recv()
                         .await
                         .expect("Proposal subscriber channel should not close");
-                    if proposal.view() == view {
-                        break proposal;
+                    if proposal_view == view {
+                        break;
                     }
                 }
+
+                self.messages
+                    .take_proposal_message(view)
+                    .await
+                    .expect("Proposal message for the view must exist")
             };
 
             let proposed_block = proposal.proposed_block();
@@ -215,76 +218,96 @@ where
         state.set_state(RunState::Prepare).await;
 
         let proposed_block_digest = proposal.proposed_block_digest();
+
         let quorum = self.validator_manager.quorum(view.height);
+        assert_ne!(quorum, 0, "Quorum must be greater than 0");
 
-        // Add the prepare to messages and broadcast it
-        let prepare =
-            Arc::new(PrepareMessage::new(view, proposed_block_digest).into_signed(&self.signer));
-        self.messages
-            .add_prepare_message(prepare.clone(), self.signer.address())
-            .await;
+        // Broadcast prepare to peers
+        let prepare = PrepareMessage::new(view, proposed_block_digest).into_signed(&self.signer);
         self.broadcast
-            .broadcast(IBFTMessage::Prepare(prepare))
-            .await
-            .map_err(IBFTError::P2PBroadcast)?;
+            .broadcast_message(IBFTBroadcastMessage::Prepare(&prepare))
+            .await;
 
-        let prepare_verifier_fn = get_prepare_verifier(view, proposed_block_digest);
+        // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
+        // and querying by view also ensures height and round matches.
+        let verify_prepare_fn = move |prepare: &PrepareMessageSigned| -> bool {
+            prepare.proposed_block_digest() == proposed_block_digest
+        };
         // Subscribe to prepare messages first
         let mut prepare_rx = self.messages.subscribe_prepare();
-        // Get valid prepare message count
-        let mut valid_prepare_count = self
+        let (mut prepares, mut need_more) = self
             .messages
-            .get_valid_prepare_message_count(view, &prepare_verifier_fn)
+            .try_collect_valid_prepare_messages(view, verify_prepare_fn, quorum - 1)
             .await;
-        // Wait for new prepare messages until we hit quorum
-        while valid_prepare_count < quorum {
-            let prepare = prepare_rx
+        // Wait for new prepare messages until we hit quorum - 1 (+1 from us)
+        while need_more > 0 {
+            let new_prepare_view = prepare_rx
                 .recv()
                 .await
                 .expect("Prepare subscriber channel should not close");
-            if prepare_verifier_fn(&prepare) {
-                valid_prepare_count += 1;
+            if new_prepare_view == view {
+                need_more -= 1;
+                if need_more == 0 {
+                    (prepares, need_more) = self
+                        .messages
+                        .try_collect_valid_prepare_messages(view, verify_prepare_fn, quorum - 1)
+                        .await;
+                }
             }
         }
+
+        let mut prepares = prepares.expect("Must be some");
+        prepares.push(prepare);
 
         // Go to commit state
         state.set_state(RunState::Commit).await;
 
-        // Add the commit to messages and broadcast it
-        let commit = Arc::new(
-            CommitMessage::new(view, proposed_block_digest, &self.signer).into_signed(&self.signer),
-        );
-        self.messages
-            .add_commit_message(commit.clone(), self.signer.address())
-            .await;
+        // Broadcast commit to peers
+        let commit =
+            CommitMessage::new(view, proposed_block_digest, &self.signer).into_signed(&self.signer);
         self.broadcast
-            .broadcast(IBFTMessage::Commit(commit))
-            .await
-            .map_err(IBFTError::P2PBroadcast)?;
+            .broadcast_message(IBFTBroadcastMessage::Commit(&commit))
+            .await;
 
-        let commit_verifier_fn = get_commit_verifier(view, proposed_block_digest);
+        // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
+        // and querying by view also ensures height and round matches.
+        let verify_commit_fn = move |commit: &CommitMessageSigned| -> bool {
+            commit.proposed_block_digest() == proposed_block_digest
+        };
         // Subscribe to commit messages first
         let mut commit_rx = self.messages.subscribe_commit();
-        // Get valid commit message count
-        let mut valid_commit_seals = self
+        let (mut commits, mut need_more) = self
             .messages
-            .get_valid_commit_message_seals(view, &commit_verifier_fn)
+            .try_collect_valid_commit_messages(view, verify_commit_fn, quorum - 1)
             .await;
-        // Wait for new commit messages until we hit quorum
-        while valid_commit_seals.len() < quorum {
-            let commit = commit_rx
+        // Wait for new commit messages until we hit quorum - 1 (+1 from us)
+        while need_more > 0 {
+            let new_commit_view = commit_rx
                 .recv()
                 .await
                 .expect("Commit subscriber channel should not close");
-            if commit_verifier_fn(&commit) {
-                valid_commit_seals.push(commit.commit_seal());
+            if new_commit_view == view {
+                need_more -= 1;
+                if need_more == 0 {
+                    (commits, need_more) = self
+                        .messages
+                        .try_collect_valid_commit_messages(view, verify_commit_fn, quorum - 1)
+                        .await;
+                }
             }
         }
+
+        let commit_seals = commits
+            .expect("Must be some")
+            .into_iter()
+            .map(|commit| commit.commit_seal())
+            .chain(iter::once(commit.commit_seal()))
+            .collect();
 
         // Go to finalized state
         state.set_state(RunState::Finalized).await;
 
-        Ok(valid_commit_seals)
+        Ok(commit_seals)
     }
 
     fn watch_rcc(&self, state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
@@ -370,30 +393,6 @@ enum IBFTError {
     IncorrectProposalDigest,
     #[error("Invalid block: {0}")]
     InvalidBlock(anyhow::Error),
-    #[error("P2P broadcast failed: {0}")]
-    P2PBroadcast(anyhow::Error),
     #[error("Block builder failed: {0}")]
     BlockBuild(anyhow::Error),
-}
-
-/// Returns the closure to verify prepare messages. It doesn't verify signature
-/// and validators since it is already ensured by the `ConsensusMessages`.
-fn get_prepare_verifier(
-    view: View,
-    proposed_block_digest: [u8; 32],
-) -> impl Fn(&PrepareMessageSigned) -> bool {
-    move |prepare| -> bool {
-        prepare.view() == view && prepare.proposed_block_digest() == proposed_block_digest
-    }
-}
-
-/// Returns the closure to verify commit messages. It doesn't verify signature
-/// and validators since it is already ensured by the `ConsensusMessages`.
-fn get_commit_verifier(
-    view: View,
-    proposed_block_digest: [u8; 32],
-) -> impl Fn(&CommitMessageSigned) -> bool {
-    move |commit| -> bool {
-        commit.view() == view && commit.proposed_block_digest() == proposed_block_digest
-    }
 }

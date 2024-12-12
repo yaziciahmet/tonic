@@ -1,73 +1,23 @@
-use std::io;
-use std::sync::Arc;
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use tonic_primitives::{keccak256, Address, PrimitiveSignature, B256};
 use tonic_signer::Signer;
 
 use super::codec;
 
-#[derive(Debug)]
-pub enum IBFTMessage {
-    Proposal(Arc<ProposalMessageSigned>),
-    Prepare(Arc<PrepareMessageSigned>),
-    Commit(Arc<CommitMessageSigned>),
-    RoundChange(Arc<RoundChangeMessageSigned>),
+#[derive(Debug, BorshSerialize)]
+pub enum IBFTBroadcastMessage<'a> {
+    Proposal(&'a ProposalMessageSigned),
+    Prepare(&'a PrepareMessageSigned),
+    Commit(&'a CommitMessageSigned),
+    RoundChange(&'a RoundChangeMessageSigned),
 }
 
-impl BorshSerialize for IBFTMessage {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        match self {
-            Self::Proposal(proposal) => {
-                // Write the enum variant
-                proposal.message.ty().serialize(writer)?;
-                // Write inner data
-                proposal.serialize(writer)
-            }
-            Self::Prepare(prepare) => {
-                // Write the enum variant
-                prepare.message.ty().serialize(writer)?;
-                // Write inner data
-                prepare.serialize(writer)
-            }
-            Self::Commit(commit) => {
-                // Write the enum variant
-                commit.message.ty().serialize(writer)?;
-                // Write inner data
-                commit.serialize(writer)
-            }
-            Self::RoundChange(round_change) => {
-                // Write the enum variant
-                round_change.message.ty().serialize(writer)?;
-                // Write inner data
-                round_change.serialize(writer)
-            }
-        }
-    }
-}
-
-impl BorshDeserialize for IBFTMessage {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let ty = borsh::from_reader(reader)?;
-        match ty {
-            MessageType::Proposal => {
-                let message = borsh::from_reader(reader)?;
-                Ok(Self::Proposal(Arc::new(message)))
-            }
-            MessageType::Prepare => {
-                let message = borsh::from_reader(reader)?;
-                Ok(Self::Prepare(Arc::new(message)))
-            }
-            MessageType::Commit => {
-                let message = borsh::from_reader(reader)?;
-                Ok(Self::Commit(Arc::new(message)))
-            }
-            MessageType::RoundChange => {
-                let message = borsh::from_reader(reader)?;
-                Ok(Self::RoundChange(Arc::new(message)))
-            }
-        }
-    }
+#[derive(Debug, BorshDeserialize)]
+pub enum IBFTReceivedMessage {
+    Proposal(ProposalMessageSigned),
+    Prepare(PrepareMessageSigned),
+    Commit(CommitMessageSigned),
+    RoundChange(RoundChangeMessageSigned),
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -391,6 +341,13 @@ pub struct ProposedBlock {
 }
 
 impl ProposedBlock {
+    pub fn new(raw_eth_block: Vec<u8>, round: u32) -> Self {
+        Self {
+            raw_eth_block,
+            round,
+        }
+    }
+
     pub fn raw_eth_block(&self) -> &[u8] {
         &self.raw_eth_block
     }
@@ -428,6 +385,14 @@ impl FinalizationProof {
             commit_seals,
         }
     }
+
+    pub fn round(&self) -> u32 {
+        self.round
+    }
+
+    pub fn commit_seals(&self) -> &CommitSeals {
+        &self.commit_seals
+    }
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -442,6 +407,14 @@ impl FinalizedBlock {
             proof: FinalizationProof::new(proposed_block.round, commit_seals),
             raw_eth_block: proposed_block.raw_eth_block,
         }
+    }
+
+    pub fn raw_eth_block(&self) -> &[u8] {
+        &self.raw_eth_block
+    }
+
+    pub fn proof(&self) -> &FinalizationProof {
+        &self.proof
     }
 }
 

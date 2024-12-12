@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use tonic_primitives::Address;
 
-use crate::types::{FinalizedBlock, IBFTMessage, View};
+use crate::types::{FinalizedBlock, IBFTBroadcastMessage, View};
 
 pub trait ValidatorManager: Clone + Send + Sync + 'static {
     fn is_validator(&self, address: Address, height: u64) -> bool;
@@ -21,7 +21,7 @@ pub trait BlockBuilder: Clone + Send + Sync + 'static {
 
 #[async_trait]
 pub trait Broadcast: Clone + Send + Sync + 'static {
-    async fn broadcast(&self, message: IBFTMessage) -> anyhow::Result<()>;
+    async fn broadcast_message<'a>(&self, message: IBFTBroadcastMessage<'a>);
 
-    async fn broadcast_block(&self, block: FinalizedBlock) -> anyhow::Result<()>;
+    async fn broadcast_block(&self, block: &FinalizedBlock);
 }

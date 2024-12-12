@@ -4,7 +4,7 @@ use tonic_signer::Signer;
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::ibft::IBFT;
 use crate::messages::{ConsensusMessages, MessageHandler};
-use crate::types::{FinalizedBlock, IBFTMessage};
+use crate::types::{FinalizedBlock, IBFTReceivedMessage};
 
 /// `ConsensusEngine` is the main wrapper that handles synchronization
 /// in between incoming P2P messages and the ongoing IBFT run.
@@ -67,7 +67,7 @@ where
     }
 
     /// Spawns a background tokio task which handles incoming P2P consensus messages.
-    pub fn spawn_message_handler(&self, p2p_rx: mpsc::Receiver<IBFTMessage>) {
+    pub fn spawn_message_handler(&self, p2p_rx: mpsc::Receiver<IBFTReceivedMessage>) {
         let message_handler = self.message_handler.clone();
         tokio::spawn(message_handler.start(p2p_rx));
     }

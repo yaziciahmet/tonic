@@ -1,15 +1,16 @@
 use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::anyhow;
 use tokio::sync::{broadcast, mpsc, Mutex};
-use tonic_primitives::{Address, PrimitiveSignature};
+use tonic_primitives::Address;
 use tracing::warn;
 
 use crate::backend::ValidatorManager;
-use crate::types::IBFTMessage;
+use crate::types::IBFTReceivedMessage;
 
 use super::types::{
     CommitMessageSigned, PrepareMessageSigned, ProposalMessageSigned, RoundChangeMessageSigned,
@@ -45,7 +46,7 @@ where
 
     /// Starts listening from p2p receiver channel for new messages.
     /// Consumes self and should be used in `tokio::spawn`.
-    pub async fn start(self, mut p2p_rx: mpsc::Receiver<IBFTMessage>) {
+    pub async fn start(self, mut p2p_rx: mpsc::Receiver<IBFTReceivedMessage>) {
         loop {
             let message = p2p_rx
                 .recv()
@@ -60,9 +61,9 @@ where
     /// Handle incoming p2p message. Verifies that the message sender is a validator,
     /// and if proposal, the message sender is proposer. For commit messages, it also
     /// verifies that the commit seal signer and message signer matches.
-    async fn handle_consensus_message(&self, message: IBFTMessage) -> anyhow::Result<()> {
+    async fn handle_consensus_message(&self, message: IBFTReceivedMessage) -> anyhow::Result<()> {
         match message {
-            IBFTMessage::Proposal(proposal) => {
+            IBFTReceivedMessage::Proposal(proposal) => {
                 let view = proposal.view();
 
                 if view.height <= self.height() {
@@ -76,7 +77,7 @@ where
 
                 self.messages.add_proposal_message(proposal).await;
             }
-            IBFTMessage::Prepare(prepare) => {
+            IBFTReceivedMessage::Prepare(prepare) => {
                 let view = prepare.view();
 
                 if view.height <= self.height() {
@@ -90,7 +91,7 @@ where
 
                 self.messages.add_prepare_message(prepare, sender).await;
             }
-            IBFTMessage::Commit(commit) => {
+            IBFTReceivedMessage::Commit(commit) => {
                 let view = commit.view();
 
                 if view.height <= self.height() {
@@ -111,7 +112,7 @@ where
 
                 self.messages.add_commit_message(commit, sender).await;
             }
-            IBFTMessage::RoundChange(round_change) => {
+            IBFTReceivedMessage::RoundChange(round_change) => {
                 let view = round_change.view();
 
                 if view.height <= self.height() {
@@ -163,15 +164,15 @@ where
 /// Also provides subscription capabilities.
 #[derive(Clone, Debug)]
 pub struct ConsensusMessages {
-    proposal_messages: Arc<Mutex<ViewMap<Arc<ProposalMessageSigned>>>>,
-    prepare_messages: Arc<Mutex<ViewSenderMap<Arc<PrepareMessageSigned>>>>,
-    commit_messages: Arc<Mutex<ViewSenderMap<Arc<CommitMessageSigned>>>>,
-    round_change_messages: Arc<Mutex<ViewSenderMap<Arc<RoundChangeMessageSigned>>>>,
+    proposal_messages: Arc<Mutex<ViewMap<ProposalMessageSigned>>>,
+    prepare_messages: Arc<Mutex<ViewSenderMap<PrepareMessageSigned>>>,
+    commit_messages: Arc<Mutex<ViewSenderMap<CommitMessageSigned>>>,
+    round_change_messages: Arc<Mutex<ViewSenderMap<RoundChangeMessageSigned>>>,
 
-    proposal_tx: broadcast::Sender<Arc<ProposalMessageSigned>>,
-    prepare_tx: broadcast::Sender<Arc<PrepareMessageSigned>>,
-    commit_tx: broadcast::Sender<Arc<CommitMessageSigned>>,
-    round_change_tx: broadcast::Sender<Arc<RoundChangeMessageSigned>>,
+    proposal_tx: broadcast::Sender<View>,
+    prepare_tx: broadcast::Sender<View>,
+    commit_tx: broadcast::Sender<View>,
+    round_change_tx: broadcast::Sender<View>,
 }
 
 impl ConsensusMessages {
@@ -209,70 +210,78 @@ impl ConsensusMessages {
     }
 
     /// Adds a proposal message if not already exists for the view, and broadcasts it.
-    pub async fn add_proposal_message(&self, proposal: Arc<ProposalMessageSigned>) {
+    pub async fn add_proposal_message(&self, proposal: ProposalMessageSigned) {
+        let view = proposal.view();
         let mut proposal_messages = self.proposal_messages.lock().await;
-        let entry = proposal_messages.view_entry(proposal.view());
+        let entry = proposal_messages.view_entry(view);
         if let btree_map::Entry::Vacant(entry) = entry {
-            entry.insert(proposal.clone());
-
-            let _ = self.proposal_tx.send(proposal);
+            entry.insert(proposal);
+            let _ = self.proposal_tx.send(view);
         }
     }
 
     /// Adds a prepare message if not already exists for the view and sender, and broadcasts it.
-    pub async fn add_prepare_message(&self, prepare: Arc<PrepareMessageSigned>, sender: Address) {
+    pub async fn add_prepare_message(&self, prepare: PrepareMessageSigned, sender: Address) {
+        let view = prepare.view();
         let mut prepare_messages = self.prepare_messages.lock().await;
-        let entry = prepare_messages.sender_entry(prepare.view(), sender);
+        let entry = prepare_messages.sender_entry(view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            entry.insert(prepare.clone());
-
-            let _ = self.prepare_tx.send(prepare);
+            entry.insert(prepare);
+            let _ = self.prepare_tx.send(view);
         }
     }
 
     /// Adds a commit message if not already exists for the view and sender, and broadcasts it.
-    pub async fn add_commit_message(&self, commit: Arc<CommitMessageSigned>, sender: Address) {
+    pub async fn add_commit_message(&self, commit: CommitMessageSigned, sender: Address) {
+        let view = commit.view();
         let mut commit_messages = self.commit_messages.lock().await;
-        let entry = commit_messages.sender_entry(commit.view(), sender);
+        let entry = commit_messages.sender_entry(view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            entry.insert(commit.clone());
-
-            let _ = self.commit_tx.send(commit);
+            entry.insert(commit);
+            let _ = self.commit_tx.send(view);
         }
     }
 
     /// Adds a round change message if not already exists for the view and sender, and broadcasts it.
     pub async fn add_round_change_message(
         &self,
-        round_change: Arc<RoundChangeMessageSigned>,
+        round_change: RoundChangeMessageSigned,
         sender: Address,
     ) {
+        let view = round_change.view();
         let mut round_change_messages = self.round_change_messages.lock().await;
-        let entry = round_change_messages.sender_entry(round_change.view(), sender);
+        let entry = round_change_messages.sender_entry(view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            entry.insert(round_change.clone());
-
-            let _ = self.round_change_tx.send(round_change);
+            entry.insert(round_change);
+            let _ = self.round_change_tx.send(view);
         }
     }
 
-    pub fn subscribe_proposal(&self) -> broadcast::Receiver<Arc<ProposalMessageSigned>> {
+    pub fn subscribe_proposal(&self) -> broadcast::Receiver<View> {
         self.proposal_tx.subscribe()
     }
 
-    pub fn subscribe_prepare(&self) -> broadcast::Receiver<Arc<PrepareMessageSigned>> {
+    pub fn subscribe_prepare(&self) -> broadcast::Receiver<View> {
         self.prepare_tx.subscribe()
     }
 
-    pub fn subscribe_commit(&self) -> broadcast::Receiver<Arc<CommitMessageSigned>> {
+    pub fn subscribe_commit(&self) -> broadcast::Receiver<View> {
         self.commit_tx.subscribe()
     }
 
-    pub fn subscribe_round_change(&self) -> broadcast::Receiver<Arc<RoundChangeMessageSigned>> {
+    pub fn subscribe_round_change(&self) -> broadcast::Receiver<View> {
         self.round_change_tx.subscribe()
     }
 
-    pub async fn get_valid_prepare_message_count<F>(&self, view: View, verify_fn: F) -> usize
+    /// Tries to collect prepare messages that are verified (and pruned) by `verify_fn`.
+    /// Returns the collected prepare messages and 0 if quorum is reached, else, returns
+    /// None and required valid prepare message count.
+    pub async fn try_collect_valid_prepare_messages<F>(
+        &self,
+        view: View,
+        verify_fn: F,
+        quorum: usize,
+    ) -> (Option<Vec<PrepareMessageSigned>>, usize)
     where
         F: Fn(&PrepareMessageSigned) -> bool,
     {
@@ -282,14 +291,20 @@ impl ConsensusMessages {
         // Prune invalid messages
         messages.retain(|_, prepare| verify_fn(prepare));
 
-        messages.len()
+        if messages.len() >= quorum {
+            let messages = mem::take(messages).into_values().collect::<Vec<_>>();
+            (Some(messages), 0)
+        } else {
+            (None, quorum - messages.len())
+        }
     }
 
-    pub async fn get_valid_commit_message_seals<F>(
+    pub async fn try_collect_valid_commit_messages<F>(
         &self,
         view: View,
         verify_fn: F,
-    ) -> Vec<PrimitiveSignature>
+        quorum: usize,
+    ) -> (Option<Vec<CommitMessageSigned>>, usize)
     where
         F: Fn(&CommitMessageSigned) -> bool,
     {
@@ -299,35 +314,37 @@ impl ConsensusMessages {
         // Prune invalid messages
         messages.retain(|_, commit| verify_fn(commit));
 
-        messages
-            .values()
-            .map(|commit| commit.commit_seal())
-            .collect()
+        if messages.len() >= quorum {
+            let messages = mem::take(messages).into_values().collect::<Vec<_>>();
+            (Some(messages), 0)
+        } else {
+            (None, quorum - messages.len())
+        }
     }
 
-    pub async fn get_valid_round_change_messages<F>(
-        &self,
-        view: View,
-        verify_fn: F,
-    ) -> Vec<Arc<RoundChangeMessageSigned>>
-    where
-        F: Fn(&RoundChangeMessageSigned) -> bool,
-    {
-        let mut round_change_messages = self.round_change_messages.lock().await;
-        let messages = round_change_messages.view_entry(view).or_default();
+    // pub async fn get_valid_round_change_messages<F>(
+    //     &self,
+    //     view: View,
+    //     verify_fn: F,
+    // ) -> Vec<Arc<RoundChangeMessageSigned>>
+    // where
+    //     F: Fn(&RoundChangeMessageSigned) -> bool,
+    // {
+    //     let mut round_change_messages = self.round_change_messages.lock().await;
+    //     let messages = round_change_messages.view_entry(view).or_default();
 
-        // Prune invalid messages
-        messages.retain(|_, round_change| verify_fn(round_change));
+    //     // Prune invalid messages
+    //     messages.retain(|_, round_change| verify_fn(round_change));
 
-        messages.values().cloned().collect()
-    }
+    //     messages.values().cloned().collect()
+    // }
 
-    pub async fn get_proposal_message(&self, view: View) -> Option<Arc<ProposalMessageSigned>> {
-        let proposal_messages = self.proposal_messages.lock().await;
-        proposal_messages.get_by_view(view).cloned()
-    }
+    // pub async fn get_proposal_message(&self, view: View) -> Option<Arc<ProposalMessageSigned>> {
+    //     let proposal_messages = self.proposal_messages.lock().await;
+    //     proposal_messages.get_by_view(view).cloned()
+    // }
 
-    pub async fn take_proposal_message(&self, view: View) -> Option<Arc<ProposalMessageSigned>> {
+    pub async fn take_proposal_message(&self, view: View) -> Option<ProposalMessageSigned> {
         let mut proposal_messages = self.proposal_messages.lock().await;
         match proposal_messages.view_entry(view) {
             btree_map::Entry::Vacant(_) => None,
