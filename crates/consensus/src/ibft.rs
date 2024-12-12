@@ -1,17 +1,18 @@
-use std::iter;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{iter, mem};
 
 use tokio::select;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tonic_signer::Signer;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
-    CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTBroadcastMessage,
-    PrepareMessage, PrepareMessageSigned, ProposalMessage,
+    CommitMessage, CommitMessageSigned, FinalizedBlock, IBFTBroadcastMessage,
+    PrepareMessage, PrepareMessageSigned, PreparedCertificate, ProposalMessage,
+    ProposalMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -112,12 +113,9 @@ where
                     info!("Got enough round change messages to create round change certificate");
                     abort();
                 }
-                Ok(commit_seals) = round_finished => {
+                Ok(finalized_block) = round_finished => {
                     info!("Finished IBFT round");
                     abort();
-
-                    let proposal = self.messages.take_proposal_message(view).await.expect("There must be a proposal when round is finished");
-                    let finalized_block = FinalizedBlock::new(proposal.into_proposed_block(), commit_seals);
                     return Some(finalized_block);
                 }
             }
@@ -127,14 +125,14 @@ where
     fn start_ibft_round(
         &self,
         state: SharedRunState,
-    ) -> (oneshot::Receiver<CommitSeals>, JoinHandle<()>) {
+    ) -> (oneshot::Receiver<FinalizedBlock>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
 
         let task = tokio::spawn(async move {
             match ibft.run_ibft_round0(state).await {
-                Ok(commit_seals) => {
-                    let _ = tx.send(commit_seals);
+                Ok(finalized_block) => {
+                    let _ = tx.send(finalized_block);
                 }
                 Err(err) => {
                     // TODO: think about what to do here
@@ -146,7 +144,7 @@ where
         (rx, task)
     }
 
-    async fn run_ibft_round0(&self, state: SharedRunState) -> Result<CommitSeals, IBFTError> {
+    async fn run_ibft_round0(&self, state: SharedRunState) -> Result<FinalizedBlock, IBFTError> {
         let view = state.view;
 
         assert_eq!(view.round, 0, "round must be 0");
@@ -214,10 +212,11 @@ where
             proposal
         };
 
-        // Go to prepare state
-        state.set_state(RunState::Prepare).await;
+        debug!("Accepted proposal");
 
         let proposed_block_digest = proposal.proposed_block_digest();
+        // Add the proposal to shared state
+        state.add_proposal(proposal).await;
 
         let quorum = self.validator_manager.quorum(view.height);
         assert_ne!(quorum, 0, "Quorum must be greater than 0");
@@ -259,8 +258,10 @@ where
         let mut prepares = prepares.expect("Must be some");
         prepares.push(prepare);
 
-        // Go to commit state
-        state.set_state(RunState::Commit).await;
+        debug!("Received quorum prepare messages");
+
+        // Add prepares to shared state
+        state.add_prepares(prepares).await;
 
         // Broadcast commit to peers
         let commit =
@@ -304,17 +305,20 @@ where
             .chain(iter::once(commit.commit_seal()))
             .collect();
 
-        // Go to finalized state
-        state.set_state(RunState::Finalized).await;
+        debug!("Received quorum commit messages");
 
-        Ok(commit_seals)
+        let proposal = state.finalize().await;
+        let finalized_block = FinalizedBlock::new(proposal.into_proposed_block(), commit_seals);
+
+        Ok(finalized_block)
     }
 
     fn watch_rcc(&self, state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let ibft = self.clone();
         let task = tokio::spawn(async move {
-            ibft.wait_until_rcc(state).await;
+            // ibft.wait_until_rcc(state).await;
+            tokio::time::sleep(Duration::from_secs(9999)).await;
             let _ = tx.send(());
         });
 
@@ -356,33 +360,69 @@ fn get_round_timeout(mut round: u32) -> Duration {
 #[derive(Clone, Debug)]
 struct SharedRunState {
     view: View,
-    state: Arc<RwLock<RunState>>,
+    proposal: Arc<RwLock<Option<ProposalMessageSigned>>>,
+    prepares: Arc<RwLock<Vec<PrepareMessageSigned>>>,
 }
 
 impl SharedRunState {
     fn new(view: View) -> Self {
         Self {
             view,
-            state: Default::default(),
+            proposal: Default::default(),
+            prepares: Default::default(),
         }
     }
 
-    async fn set_state(&self, new_state: RunState) {
-        *self.state.write().await = new_state;
+    async fn add_proposal(&self, proposal: ProposalMessageSigned) {
+        let mut cur_proposal = self.proposal.write().await;
+        assert!(
+            matches!(*cur_proposal, None),
+            "add_proposal should not be called twice"
+        );
+        *cur_proposal = Some(proposal);
     }
 
-    async fn proposal_accepted(&self) -> bool {
-        *self.state.read().await != RunState::Proposal
+    async fn add_prepares(&self, prepares: Vec<PrepareMessageSigned>) {
+        let mut cur_prepares = self.prepares.write().await;
+        assert_eq!(
+            cur_prepares.len(),
+            0,
+            "add_prepares should not be called twice"
+        );
+        *cur_prepares = prepares;
     }
-}
 
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-enum RunState {
-    #[default]
-    Proposal,
-    Prepare,
-    Commit,
-    Finalized,
+    async fn try_create_prepared_certificate(&self) -> Option<PreparedCertificate> {
+        let mut proposal = self.proposal.write().await;
+        let mut prepares = self.prepares.write().await;
+
+        if proposal.is_some() && prepares.len() > 0 {
+            let proposal = proposal.take().expect("Must be some");
+            let prepares = mem::take(prepares.as_mut());
+            return Some(PreparedCertificate::new(proposal, prepares));
+        }
+
+        None
+    }
+
+    async fn finalize(&self) -> ProposalMessageSigned {
+        let mut cur_proposal = self.proposal.write().await;
+        let mut cur_prepares = self.prepares.write().await;
+        assert!(
+            cur_prepares.len() > 0,
+            "Called finalize before adding any prepares"
+        );
+        // Clear proposal and prepare
+        let proposal = cur_proposal
+            .take()
+            .expect("Called finalize before adding a proposal");
+        *cur_prepares = vec![];
+        // Manuall drop to enfore unlock order
+        drop(cur_prepares);
+        drop(cur_proposal);
+
+        proposal
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
