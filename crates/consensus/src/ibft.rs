@@ -66,7 +66,11 @@ where
         }
     }
 
-    pub async fn run(&self, height: u64, mut cancel: oneshot::Receiver<()>) -> Option<FinalizedBlock> {
+    pub async fn run(
+        &self,
+        height: u64,
+        mut cancel: oneshot::Receiver<()>,
+    ) -> Option<FinalizedBlock> {
         let mut view = View { height, round: 0 };
 
         info!("Running consensus height {}", view.height);
