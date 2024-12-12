@@ -409,8 +409,8 @@ impl ProposedBlock {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PreparedCertificate {
-    pub proposal_message: ProposalMessage,
-    pub prepare_messages: Vec<PrepareMessage>,
+    pub proposal_message: ProposalMessageSigned,
+    pub prepare_messages: Vec<PrepareMessageSigned>,
 }
 
 pub type CommitSeals = Vec<PrimitiveSignature>;
