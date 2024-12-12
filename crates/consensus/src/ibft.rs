@@ -5,12 +5,12 @@ use tokio::select;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tonic_signer::Signer;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
-    CommitMessage, CommitMessageSigned, IBFTMessage, PrepareMessage, PrepareMessageSigned,
-    ProposalMessage,
+    CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTMessage, PrepareMessage,
+    PrepareMessageSigned, ProposalMessage,
 };
 
 use super::messages::ConsensusMessages;
@@ -66,7 +66,7 @@ where
         }
     }
 
-    pub async fn run(&self, height: u64, mut cancel: oneshot::Receiver<()>) {
+    pub async fn run(&self, height: u64, mut cancel: oneshot::Receiver<()>) -> Option<FinalizedBlock> {
         let mut view = View { height, round: 0 };
 
         info!("Running consensus height {}", view.height);
@@ -92,7 +92,7 @@ where
                 _ = &mut cancel => {
                     info!("Received cancel signal, stopping consensus...");
                     abort();
-                    return;
+                    return None;
                 }
                 _ = timeout => {
                     info!("Round timeout");
@@ -107,28 +107,42 @@ where
                     info!("Got enough round change messages to create round change certificate");
                     abort();
                 }
-                _ = round_finished => {
+                Ok(commit_seals) = round_finished => {
                     info!("Finished IBFT round");
                     abort();
-                    return;
+
+                    let proposal = self.messages.take_proposal_message(view).await.expect("There must be a proposal when round is finished");
+                    let proposal = Arc::into_inner(proposal).expect("There should be no other strong references to current view's proposal");
+                    let finalized_block = FinalizedBlock::new(proposal.into_proposed_block(), commit_seals);
+                    return Some(finalized_block);
                 }
             }
         }
     }
 
-    fn start_ibft_round(&self, state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn start_ibft_round(
+        &self,
+        state: SharedRunState,
+    ) -> (oneshot::Receiver<CommitSeals>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
 
         let task = tokio::spawn(async move {
-            let _ = ibft.run_ibft_round0(state).await;
-            let _ = tx.send(());
+            match ibft.run_ibft_round0(state).await {
+                Ok(commit_seals) => {
+                    let _ = tx.send(commit_seals);
+                }
+                Err(err) => {
+                    // TODO: think about what to do here
+                    error!("Error occurred during IBFT run: {err}");
+                }
+            }
         });
 
         (rx, task)
     }
 
-    async fn run_ibft_round0(&self, state: SharedRunState) -> Result<(), IBFTError> {
+    async fn run_ibft_round0(&self, state: SharedRunState) -> Result<CommitSeals, IBFTError> {
         let view = state.view;
 
         assert_eq!(view.round, 0, "round must be 0");
@@ -266,7 +280,7 @@ where
         // Go to finalized state
         state.set_state(RunState::Finalized).await;
 
-        Ok(())
+        Ok(valid_commit_seals)
     }
 
     fn watch_rcc(&self, _state: SharedRunState) -> (oneshot::Receiver<()>, JoinHandle<()>) {

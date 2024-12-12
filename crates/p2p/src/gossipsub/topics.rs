@@ -4,11 +4,13 @@ use super::messages::{GossipMessage, GossipTopicTag};
 
 pub const DUMMY_TOPIC: &str = "dummy";
 pub const CONSENSUS_TOPIC: &str = "consensus";
+pub const BLOCK_TOPIC: &str = "block";
 
 #[derive(Debug)]
 pub struct GossipTopics {
     dummy_topic: (TopicHash, Sha256Topic),
     consensus_topic: (TopicHash, Sha256Topic),
+    block_topic: (TopicHash, Sha256Topic),
 }
 
 impl GossipTopics {
@@ -17,9 +19,11 @@ impl GossipTopics {
 
         let dummy_topic = Sha256Topic::new(format!("{DUMMY_TOPIC}/{network_name}"));
         let consensus_topic = Sha256Topic::new(format!("{CONSENSUS_TOPIC}/{network_name}"));
+        let block_topic = Sha256Topic::new(format!("{BLOCK_TOPIC}/{network_name}"));
         Self {
             dummy_topic: (dummy_topic.hash(), dummy_topic),
             consensus_topic: (consensus_topic.hash(), consensus_topic),
+            block_topic: (block_topic.hash(), block_topic),
         }
     }
 
@@ -27,6 +31,7 @@ impl GossipTopics {
         match topic_hash {
             hash if hash == &self.dummy_topic.0 => Some(GossipTopicTag::Dummy),
             hash if hash == &self.consensus_topic.0 => Some(GossipTopicTag::Consensus),
+            hash if hash == &self.block_topic.0 => Some(GossipTopicTag::Block),
             _ => None,
         }
     }
@@ -35,6 +40,7 @@ impl GossipTopics {
         match message {
             GossipMessage::Dummy(_) => self.dummy_topic.0.clone(),
             GossipMessage::Consensus(_) => self.consensus_topic.0.clone(),
+            GossipMessage::Block(_) => self.block_topic.0.clone(),
         }
     }
 }

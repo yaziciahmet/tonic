@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use tokio::sync::{broadcast, mpsc};
-use tonic_consensus::types::IBFTMessage;
+use tonic_consensus::types::{FinalizedBlock, IBFTMessage};
 
 use crate::gossipsub::GossipMessage;
 use crate::p2p_service::{self, IncomingDummyMessage, P2PRequest};
@@ -49,12 +49,22 @@ impl p2p_service::Broadcast for P2PServiceProxy {
         self.consensus_tx.blocking_send(data)?;
         Ok(())
     }
+
+    fn broadcast_block(&self, _data: FinalizedBlock) -> anyhow::Result<()> {
+        unimplemented!("Broadcasting incoming finalized block is not yet implemented")
+    }
 }
 
 #[async_trait]
 impl tonic_consensus::backend::Broadcast for P2PServiceProxy {
     async fn broadcast(&self, message: IBFTMessage) -> anyhow::Result<()> {
         let request = P2PRequest::BroadcastMessage(GossipMessage::Consensus(message));
+        self.request_sender.send(request).await?;
+        Ok(())
+    }
+
+    async fn broadcast_block(&self, block: FinalizedBlock) -> anyhow::Result<()> {
+        let request = P2PRequest::BroadcastMessage(GossipMessage::Block(block));
         self.request_sender.send(request).await?;
         Ok(())
     }

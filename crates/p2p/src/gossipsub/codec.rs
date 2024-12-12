@@ -15,6 +15,7 @@ impl GossipCodec {
         let data = match message {
             GossipMessage::Dummy(v) => borsh::to_vec(v),
             GossipMessage::Consensus(msg) => borsh::to_vec(msg),
+            GossipMessage::Block(block) => borsh::to_vec(block),
         }
         .map_err(|e| anyhow!("{e}"))?;
 
@@ -31,6 +32,9 @@ impl GossipCodec {
                 borsh::from_slice(data).map_err(|e| anyhow!("{e}"))?,
             )),
             GossipTopicTag::Consensus => Ok(GossipMessage::Consensus(
+                borsh::from_slice(data).map_err(|e| anyhow!("{e}"))?,
+            )),
+            GossipTopicTag::Block => Ok(GossipMessage::Block(
                 borsh::from_slice(data).map_err(|e| anyhow!("{e}"))?,
             )),
         }

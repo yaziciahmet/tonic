@@ -152,6 +152,10 @@ impl ProposalMessageSigned {
         self.message.view
     }
 
+    pub fn into_proposed_block(self) -> ProposedBlock {
+        self.message.proposed_block
+    }
+
     pub fn proposed_block(&self) -> &ProposedBlock {
         &self.message.proposed_block
     }
@@ -407,6 +411,38 @@ impl ProposedBlock {
 pub struct PreparedCertificate {
     pub proposal_message: ProposalMessage,
     pub prepare_messages: Vec<PrepareMessage>,
+}
+
+pub type CommitSeals = Vec<PrimitiveSignature>;
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct FinalizationProof {
+    round: u32,
+    commit_seals: CommitSeals,
+}
+
+impl FinalizationProof {
+    pub fn new(round: u32, commit_seals: CommitSeals) -> Self {
+        Self {
+            round,
+            commit_seals,
+        }
+    }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct FinalizedBlock {
+    raw_eth_block: Vec<u8>,
+    proof: FinalizationProof,
+}
+
+impl FinalizedBlock {
+    pub fn new(proposed_block: ProposedBlock, commit_seals: CommitSeals) -> Self {
+        Self {
+            proof: FinalizationProof::new(proposed_block.round, commit_seals),
+            raw_eth_block: proposed_block.raw_eth_block,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq, PartialOrd, Ord)]

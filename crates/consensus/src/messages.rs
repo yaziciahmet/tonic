@@ -326,6 +326,14 @@ impl ConsensusMessages {
         let proposal_messages = self.proposal_messages.lock().await;
         proposal_messages.get_by_view(view).cloned()
     }
+
+    pub async fn take_proposal_message(&self, view: View) -> Option<Arc<ProposalMessageSigned>> {
+        let mut proposal_messages = self.proposal_messages.lock().await;
+        match proposal_messages.view_entry(view) {
+            btree_map::Entry::Vacant(_) => None,
+            btree_map::Entry::Occupied(entry) => Some(entry.remove()),
+        }
+    }
 }
 
 #[derive(Debug)]

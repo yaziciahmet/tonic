@@ -6,7 +6,7 @@ use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
 use tokio::select;
 use tokio::sync::mpsc;
-use tonic_consensus::types::IBFTMessage;
+use tonic_consensus::types::{FinalizedBlock, IBFTMessage};
 use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::behaviour::{TonicBehaviour, TonicBehaviourEvent};
@@ -210,6 +210,7 @@ where
         match message {
             GossipMessage::Dummy(value) => self.broadcast.broadcast_dummy((value, peer_id)),
             GossipMessage::Consensus(msg) => self.broadcast.broadcast_consensus(msg),
+            GossipMessage::Block(block) => self.broadcast.broadcast_block(block),
         }
     }
 
@@ -233,4 +234,6 @@ pub trait Broadcast {
     fn broadcast_dummy(&self, data: IncomingDummyMessage) -> anyhow::Result<()>;
 
     fn broadcast_consensus(&self, data: IBFTMessage) -> anyhow::Result<()>;
+
+    fn broadcast_block(&self, data: FinalizedBlock) -> anyhow::Result<()>;
 }
