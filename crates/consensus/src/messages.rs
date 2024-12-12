@@ -30,17 +30,24 @@ where
     messages: ConsensusMessages,
     validator_manager: V,
     height: Arc<AtomicU64>,
+    address: Address,
 }
 
 impl<V> MessageHandler<V>
 where
     V: ValidatorManager,
 {
-    pub fn new(messages: ConsensusMessages, validator_manager: V, height: u64) -> Self {
+    pub fn new(
+        messages: ConsensusMessages,
+        validator_manager: V,
+        height: u64,
+        address: Address,
+    ) -> Self {
         Self {
             messages,
             validator_manager,
             height: Arc::new(AtomicU64::new(height)),
+            address,
         }
     }
 
@@ -71,6 +78,10 @@ where
                 }
 
                 let sender = proposal.recover_signer()?;
+                if sender == self.address {
+                    return Err(anyhow!("Received self signed message"));
+                }
+
                 if !self.validator_manager.is_proposer(sender, view) {
                     return Err(anyhow!("Received proposal from non-proposer"));
                 }
@@ -85,6 +96,10 @@ where
                 }
 
                 let sender = prepare.recover_signer()?;
+                if sender == self.address {
+                    return Err(anyhow!("Received self signed message"));
+                }
+
                 if !self.validator_manager.is_validator(sender, view.height) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
@@ -99,6 +114,10 @@ where
                 }
 
                 let sender = commit.recover_signer()?;
+                if sender == self.address {
+                    return Err(anyhow!("Received self signed message"));
+                }
+
                 if !self.validator_manager.is_validator(sender, view.height) {
                     return Err(anyhow!("Message sender is not validator"));
                 }
@@ -120,6 +139,10 @@ where
                 }
 
                 let sender = round_change.recover_signer()?;
+                if sender == self.address {
+                    return Err(anyhow!("Received self signed message"));
+                }
+
                 if !self.validator_manager.is_validator(sender, view.height) {
                     return Err(anyhow!("Message sender is not validator"));
                 }

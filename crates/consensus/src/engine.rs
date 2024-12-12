@@ -40,6 +40,7 @@ where
                 messages.clone(),
                 validator_manager.clone(),
                 height,
+                signer.address(),
             ),
             ibft: IBFT::new(
                 messages,
