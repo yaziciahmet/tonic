@@ -246,7 +246,7 @@ where
             .messages
             .get_valid_commit_message_seals(view, &commit_verifier_fn)
             .await;
-        // Wait for new prepare messages until we hit quorum
+        // Wait for new commit messages until we hit quorum
         while valid_commit_seals.len() < quorum {
             let commit = commit_rx
                 .recv()
