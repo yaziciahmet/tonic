@@ -170,6 +170,13 @@ pub struct PrepareMessage {
 }
 
 impl PrepareMessage {
+    pub fn new(view: View, proposed_block_digest: [u8; 32]) -> Self {
+        Self {
+            view,
+            proposed_block_digest,
+        }
+    }
+
     pub fn ty(&self) -> MessageType {
         MessageType::Prepare
     }

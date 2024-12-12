@@ -8,7 +8,7 @@ use tonic_signer::Signer;
 use tracing::info;
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
-use crate::types::{IBFTMessage, ProposalMessage};
+use crate::types::{IBFTMessage, PrepareMessage, ProposalMessage};
 
 use super::messages::ConsensusMessages;
 use super::types::View;
@@ -186,6 +186,14 @@ where
         };
 
         state.set_state(RunState::Prepare).await;
+
+        let prepare = Arc::new(
+            PrepareMessage::new(view, proposal.proposed_block().digest()).into_signed(&self.signer),
+        );
+        self.messages
+            .add_prepare_message(prepare.clone(), self.signer.address())
+            .await;
+        self.broadcast.broadcast(IBFTMessage::Prepare(prepare))?;
 
         Ok(())
     }
