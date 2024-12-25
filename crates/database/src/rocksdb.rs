@@ -155,7 +155,7 @@ impl RocksDB<FullAccess> {
         opts.set_max_background_jobs(4);
         opts.set_max_open_files(config.max_open_files);
         opts.set_max_total_wal_size(config.max_total_wal_size);
-        opts.set_bytes_per_sync(1048576);
+        opts.set_bytes_per_sync(1024 * 1024);
         // 128 MB of row cache
         let cache = Cache::new_lru_cache(config.max_cache_size as usize);
         opts.set_row_cache(&cache);
