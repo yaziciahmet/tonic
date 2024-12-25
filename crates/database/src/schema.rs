@@ -8,6 +8,7 @@ pub type SchemaName = &'static str;
 /// for easy serialization of the key and values.
 pub trait Schema {
     const NAME: SchemaName;
+    type PrefixKey: BorshSerialize + BorshDeserialize + Debug;
     type Key: BorshSerialize + BorshDeserialize + Debug;
     type Value: BorshSerialize + BorshDeserialize + Debug;
 }
@@ -22,6 +23,19 @@ macro_rules! define_schema {
 
         impl $crate::schema::Schema for $name {
             const NAME: $crate::schema::SchemaName = stringify!($name);
+            type PrefixKey = ();
+            type Key = $key;
+            type Value = $value;
+        }
+    };
+    ($(#[$doc:meta])* ($name:ident) $prefix_key:ty => $key:ty => $value:ty) => {
+        $(#[$doc])*
+        #[derive(Debug)]
+        pub struct $name;
+
+        impl $crate::schema::Schema for $name {
+            const NAME: $crate::schema::SchemaName = stringify!($name);
+            type PrefixKey = $prefix_key;
             type Key = $key;
             type Value = $value;
         }
@@ -51,5 +65,9 @@ mod tests {
     crate::define_schema!(
         /// Processed transactions
         (ProcessedTransactions) [u8; 32] => ()
+    );
+    crate::define_schema!(
+        /// Double key schema
+        (DoubleKeySchema) u64 => u64 => u128
     );
 }
