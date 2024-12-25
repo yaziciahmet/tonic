@@ -155,6 +155,7 @@ impl RocksDB<FullAccess> {
         opts.set_max_background_jobs(4);
         opts.set_max_open_files(config.max_open_files);
         opts.set_max_total_wal_size(config.max_total_wal_size);
+        opts.set_bytes_per_sync(1048576);
         // 128 MB of row cache
         let cache = Cache::new_lru_cache(config.max_cache_size as usize);
         opts.set_row_cache(&cache);
@@ -164,7 +165,7 @@ impl RocksDB<FullAccess> {
         // https://github.com/facebook/rocksdb/wiki/memory-usage-in-rocksdb
         block_opts.set_block_size(16 * 1024);
         // Bloom filter to reduce disk I/O on reads
-        block_opts.set_bloom_filter(10.0, false);
+        block_opts.set_bloom_filter(10.0, true);
         // Store index and filter blocks in cache
         block_opts.set_cache_index_and_filter_blocks(true);
         // Don't evict L0 filter/index blocks from the cache
