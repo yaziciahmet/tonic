@@ -69,11 +69,12 @@ impl<Access> RocksDB<Access> {
         &'a self,
         schema: SchemaName,
         rocks_db_mode: rocksdb::IteratorMode,
+        opts: ReadOptions,
     ) -> impl Iterator<Item = Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>> + 'a {
         let cf = self.cf_handle(schema);
 
         self.inner
-            .iterator_cf_opt(cf, self.read_opts(), rocks_db_mode)
+            .iterator_cf_opt(cf, opts, rocks_db_mode)
     }
 
     pub(crate) fn raw_put(
@@ -281,7 +282,7 @@ where
             }
         };
 
-        self.raw_iterator(S::METADATA.name, rocks_db_mode)
+        self.raw_iterator(S::METADATA.name, rocks_db_mode, self.read_opts())
             .map(|result| {
                 result.map(|(key_bytes, value_bytes)| {
                     let key = codec::deserialize(&key_bytes);
