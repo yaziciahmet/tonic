@@ -4,6 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 pub type SchemaName = &'static str;
 
+#[derive(Debug)]
 pub struct SchemaMetadata {
     pub(crate) name: SchemaName,
     pub(crate) prefix_size: usize,
