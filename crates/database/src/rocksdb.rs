@@ -73,8 +73,7 @@ impl<Access> RocksDB<Access> {
     ) -> impl Iterator<Item = Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>> + 'a {
         let cf = self.cf_handle(schema);
 
-        self.inner
-            .iterator_cf_opt(cf, opts, rocks_db_mode)
+        self.inner.iterator_cf_opt(cf, opts, rocks_db_mode)
     }
 
     pub(crate) fn raw_put(
