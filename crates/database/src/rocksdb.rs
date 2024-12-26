@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rocksdb::{
     BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType,
-    DBPinnableSlice, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, DB,
+    DBPinnableSlice, Options, ReadOptions, SliceTransform, SnapshotWithThreadMode, WriteBatch, DB,
 };
 
 use crate::codec;
@@ -13,7 +13,7 @@ use crate::kv_store::{
     Changes, IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Snapshottable,
     Transactional, WriteOperation,
 };
-use crate::schema::{Schema, SchemaName};
+use crate::schema::{Schema, SchemaMetadata, SchemaName};
 use crate::transaction::InMemoryTransaction;
 
 /// Helper traits for enabling view-only access to database
@@ -134,7 +134,7 @@ impl<Access> RocksDB<Access> {
 
 impl RocksDB<FullAccess> {
     #[cfg(feature = "test-helpers")]
-    pub fn open_temp(config: Config, schemas: &[SchemaName]) -> RocksDB<FullAccess> {
+    pub fn open_temp(config: Config, schemas: &[SchemaMetadata]) -> RocksDB<FullAccess> {
         let path = tempfile::tempdir().unwrap();
         RocksDB::open(path, config, schemas)
     }
@@ -142,7 +142,7 @@ impl RocksDB<FullAccess> {
     pub fn open(
         path: impl AsRef<Path>,
         config: Config,
-        schemas: &[SchemaName],
+        schemas: &[SchemaMetadata],
     ) -> RocksDB<FullAccess> {
         // Create main database options
         let mut opts = Options::default();
@@ -176,12 +176,15 @@ impl RocksDB<FullAccess> {
         let cache = Cache::new_lru_cache(config.max_cache_size as usize);
         block_opts.set_block_cache(&cache);
 
-        let cfs = schemas.iter().map(|name| {
+        let cfs = schemas.iter().map(|meta| {
             let mut cf_opts = Options::default();
             cf_opts.set_compression_type(DBCompressionType::Lz4);
             cf_opts.set_block_based_table_factory(&block_opts);
+            if meta.prefix_size > 0 {
+                cf_opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(meta.prefix_size));
+            }
 
-            ColumnFamilyDescriptor::new(*name, cf_opts)
+            ColumnFamilyDescriptor::new(meta.name, cf_opts)
         });
 
         let inner = DB::open_cf_descriptors(&opts, path, cfs)
@@ -203,7 +206,7 @@ where
     fn get<S: Schema>(&self, key: &S::Key) -> Result<Option<S::Value>, rocksdb::Error> {
         let key_bytes = codec::serialize(key);
         Ok(self
-            .raw_get(S::NAME, &key_bytes)?
+            .raw_get(S::METADATA.name, &key_bytes)?
             .map(|bytes| codec::deserialize(bytes.as_ref())))
     }
 
@@ -216,8 +219,10 @@ where
             .map(|key| codec::serialize(&key))
             .collect::<Vec<_>>();
 
-        let values_bytes =
-            self.raw_multi_get(S::NAME, keys_bytes.iter().map(|bytes| bytes.as_slice()));
+        let values_bytes = self.raw_multi_get(
+            S::METADATA.name,
+            keys_bytes.iter().map(|bytes| bytes.as_slice()),
+        );
         let mut values = Vec::with_capacity(values_bytes.len());
         for bytes in values_bytes {
             let value = bytes?.map(|bytes| codec::deserialize(bytes.as_ref()));
@@ -229,7 +234,7 @@ where
 
     fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, rocksdb::Error> {
         let key_bytes = codec::serialize(key);
-        Ok(self.raw_get(S::NAME, &key_bytes)?.is_some())
+        Ok(self.raw_get(S::METADATA.name, &key_bytes)?.is_some())
     }
 }
 
@@ -240,12 +245,12 @@ where
     fn put<S: Schema>(&mut self, key: &S::Key, value: &S::Value) -> Result<(), rocksdb::Error> {
         let key_bytes = codec::serialize(key);
         let value_bytes = codec::serialize(value);
-        self.raw_put(S::NAME, &key_bytes, &value_bytes)
+        self.raw_put(S::METADATA.name, &key_bytes, &value_bytes)
     }
 
     fn delete<S: Schema>(&mut self, key: &S::Key) -> Result<(), rocksdb::Error> {
         let key_bytes = codec::serialize(key);
-        self.raw_delete(S::NAME, &key_bytes)
+        self.raw_delete(S::METADATA.name, &key_bytes)
     }
 
     fn write_batch(&mut self, changes: Changes) -> Result<(), rocksdb::Error> {
@@ -275,13 +280,14 @@ where
             }
         };
 
-        self.raw_iterator(S::NAME, rocks_db_mode).map(|result| {
-            result.map(|(key_bytes, value_bytes)| {
-                let key = codec::deserialize(&key_bytes);
-                let value = codec::deserialize(&value_bytes);
-                (key, value)
+        self.raw_iterator(S::METADATA.name, rocks_db_mode)
+            .map(|result| {
+                result.map(|(key_bytes, value_bytes)| {
+                    let key = codec::deserialize(&key_bytes);
+                    let value = codec::deserialize(&value_bytes);
+                    (key, value)
+                })
             })
-        })
     }
 }
 
@@ -316,7 +322,7 @@ impl Snapshottable for RocksDB<FullAccess> {
 }
 
 #[cfg(feature = "test-helpers")]
-pub fn create_test_db(schemas: &[SchemaName]) -> RocksDB<FullAccess> {
+pub fn create_test_db(schemas: &[SchemaMetadata]) -> RocksDB<FullAccess> {
     let config = Config {
         max_open_files: 8,
         max_cache_size: 1024 * 1024,
@@ -333,7 +339,7 @@ mod tests {
         IteratorMode, KeyValueAccessor, KeyValueIterator, KeyValueMutator, Snapshottable,
         WriteOperation,
     };
-    use crate::schema::{Schema, SchemaName};
+    use crate::schema::{Schema, SchemaMetadata};
     use crate::{codec, define_schema};
 
     use super::create_test_db;
@@ -342,7 +348,7 @@ mod tests {
         (Dummy) u64 => u64
     );
 
-    const SCHEMAS: &[SchemaName] = &[Dummy::NAME];
+    const SCHEMAS: &[SchemaMetadata] = &[Dummy::METADATA];
 
     #[test]
     fn put_and_get() {
@@ -498,7 +504,8 @@ mod tests {
 
         // Insert 2 kvs with write_batch
         let mut changes = HashMap::new();
-        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> =
+            changes.entry(Dummy::METADATA.name).or_default();
         btree.insert(
             codec::serialize(&1u64),
             WriteOperation::Put(codec::serialize(&100u64)),
@@ -512,7 +519,8 @@ mod tests {
         assert_eq!(db.get::<Dummy>(&2).unwrap(), Some(200));
 
         let mut changes = HashMap::new();
-        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> =
+            changes.entry(Dummy::METADATA.name).or_default();
 
         // Delete one of the previous keys, and add a new kv
         btree.insert(

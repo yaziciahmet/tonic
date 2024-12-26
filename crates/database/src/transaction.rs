@@ -34,7 +34,7 @@ impl<'a> InMemoryTransaction<'a> {
 impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
     fn get<S: Schema>(&self, key: &S::Key) -> Result<Option<S::Value>, rocksdb::Error> {
         let key_bytes = codec::serialize(key);
-        if let Some(operation) = self.get_from_changes(S::NAME, &key_bytes) {
+        if let Some(operation) = self.get_from_changes(S::METADATA.name, &key_bytes) {
             match operation {
                 WriteOperation::Put(value_bytes) => Ok(Some(codec::deserialize(value_bytes))),
                 WriteOperation::Delete => Ok(None),
@@ -42,7 +42,7 @@ impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
         } else {
             Ok(self
                 .db
-                .raw_get(S::NAME, &key_bytes)?
+                .raw_get(S::METADATA.name, &key_bytes)?
                 .map(|bytes| codec::deserialize(bytes.as_ref())))
         }
     }
@@ -51,7 +51,7 @@ impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
         &self,
         keys: impl IntoIterator<Item = S::Key>,
     ) -> Result<Vec<Option<S::Value>>, rocksdb::Error> {
-        if let Some(btree) = self.changes.get(S::NAME) {
+        if let Some(btree) = self.changes.get(S::METADATA.name) {
             let mut values: Vec<Option<S::Value>> = vec![];
             for key in keys.into_iter() {
                 let key_bytes = codec::serialize(&key);
@@ -65,7 +65,7 @@ impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
                     }
                 } else {
                     self.db
-                        .raw_get(S::NAME, &key_bytes)?
+                        .raw_get(S::METADATA.name, &key_bytes)?
                         .map(|bytes| codec::deserialize(bytes.as_ref()))
                 };
 
@@ -80,13 +80,13 @@ impl<'a> KeyValueAccessor for InMemoryTransaction<'a> {
 
     fn exists<S: Schema>(&self, key: &S::Key) -> Result<bool, rocksdb::Error> {
         let key_bytes = codec::serialize(key);
-        if let Some(operation) = self.get_from_changes(S::NAME, &key_bytes) {
+        if let Some(operation) = self.get_from_changes(S::METADATA.name, &key_bytes) {
             match operation {
                 WriteOperation::Put(_) => Ok(true),
                 WriteOperation::Delete => Ok(false),
             }
         } else {
-            Ok(self.db.raw_get(S::NAME, &key_bytes)?.is_some())
+            Ok(self.db.raw_get(S::METADATA.name, &key_bytes)?.is_some())
         }
     }
 }
@@ -97,7 +97,7 @@ impl<'a> KeyValueMutator for InMemoryTransaction<'a> {
         let value_bytes = codec::serialize(value);
 
         self.changes
-            .entry(S::NAME)
+            .entry(S::METADATA.name)
             .or_default()
             .insert(key_bytes, WriteOperation::Put(value_bytes));
         Ok(())
@@ -107,7 +107,7 @@ impl<'a> KeyValueMutator for InMemoryTransaction<'a> {
         let key_bytes = codec::serialize(key);
 
         self.changes
-            .entry(S::NAME)
+            .entry(S::METADATA.name)
             .or_default()
             .insert(key_bytes, WriteOperation::Delete);
         Ok(())
@@ -151,14 +151,14 @@ mod tests {
         Commitable, KeyValueAccessor, KeyValueMutator, Transactional, WriteOperation,
     };
     use crate::rocksdb::create_test_db;
-    use crate::schema::{Schema, SchemaName};
+    use crate::schema::{Schema, SchemaMetadata};
     use crate::{codec, define_schema};
 
     define_schema!(
         (Dummy) u64 => u64
     );
 
-    const SCHEMAS: &[SchemaName] = &[Dummy::NAME];
+    const SCHEMAS: &[SchemaMetadata] = &[Dummy::METADATA];
 
     #[test]
     fn put() {
@@ -225,7 +225,8 @@ mod tests {
         let mut tx = db.transaction();
 
         let mut changes = HashMap::new();
-        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> =
+            changes.entry(Dummy::METADATA.name).or_default();
 
         // Insert 2 key-value pairs
         let (key_1, value_1) = (1, 100);
@@ -244,7 +245,8 @@ mod tests {
         assert_eq!(tx.get::<Dummy>(&key_2).unwrap(), Some(value_2));
 
         let mut changes = HashMap::new();
-        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> = changes.entry(Dummy::NAME).or_default();
+        let btree: &mut BTreeMap<Vec<u8>, WriteOperation> =
+            changes.entry(Dummy::METADATA.name).or_default();
 
         // Delete one of the previous keys, and add another key-value pair
         let (key_3, value_3) = (3, 300);

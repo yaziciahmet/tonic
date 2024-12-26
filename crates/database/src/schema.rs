@@ -4,10 +4,15 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 pub type SchemaName = &'static str;
 
+pub struct SchemaMetadata {
+    pub(crate) name: SchemaName,
+    pub(crate) prefix_size: usize,
+}
+
 /// Schema trait wraps a simple key-value schema info
 /// for easy serialization of the key and values.
 pub trait Schema {
-    const NAME: SchemaName;
+    const METADATA: SchemaMetadata;
     type PrefixKey: BorshSerialize + BorshDeserialize + Debug;
     type Key: BorshSerialize + BorshDeserialize + Debug;
     type Value: BorshSerialize + BorshDeserialize + Debug;
@@ -22,7 +27,10 @@ macro_rules! define_schema {
         pub struct $name;
 
         impl $crate::schema::Schema for $name {
-            const NAME: $crate::schema::SchemaName = stringify!($name);
+            const METADATA: $crate::schema::SchemaMetadata = $crate::schema::SchemaMetadata {
+                name: stringify!($name),
+                prefix_size: 0,
+            };
             type PrefixKey = ();
             type Key = $key;
             type Value = $value;
@@ -34,7 +42,10 @@ macro_rules! define_schema {
         pub struct $name;
 
         impl $crate::schema::Schema for $name {
-            const NAME: $crate::schema::SchemaName = stringify!($name);
+            const METADATA: $crate::schema::SchemaMetadata = $crate::schema::SchemaMetadata {
+                name: stringify!($name),
+                prefix_size: std::mem::size_of::<$prefix_key>(),
+            };
             type PrefixKey = $prefix_key;
             type Key = $key;
             type Value = $value;
