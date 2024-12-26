@@ -125,6 +125,7 @@ impl<Access> RocksDB<Access> {
 
     fn generate_read_opts(snapshot: &Option<SnapshotWithThreadMode<'static, DB>>) -> ReadOptions {
         let mut opts = ReadOptions::default();
+        opts.set_verify_checksums(false);
         if let Some(snapshot) = snapshot {
             opts.set_snapshot(snapshot);
         }
