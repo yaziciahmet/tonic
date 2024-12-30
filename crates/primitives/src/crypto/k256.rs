@@ -4,7 +4,7 @@ use secp256k1::{Message, SECP256K1};
 
 pub fn sign_prehash(secret_key: &SecretKey, prehash: [u8; 32]) -> ([u8; 64], u8) {
     let (recid, signature) = SECP256K1
-        .sign_ecdsa_recoverable(&Message::from_digest(prehash), &secret_key)
+        .sign_ecdsa_recoverable(&Message::from_digest(prehash), secret_key)
         .serialize_compact();
     (signature, i32::from(recid) as u8)
 }
