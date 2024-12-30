@@ -115,9 +115,8 @@ impl ProposalMessageSigned {
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        Ok(self
-            .signature
-            .recover_from_prehash(self.message.data_to_sign())?)
+        self.signature
+            .recover_from_prehash(self.message.data_to_sign())
     }
 
     pub fn verify_digest(&self) -> bool {
@@ -182,9 +181,8 @@ impl PrepareMessageSigned {
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        Ok(self
-            .signature
-            .recover_from_prehash(self.message.data_to_sign())?)
+        self.signature
+            .recover_from_prehash(self.message.data_to_sign())
     }
 }
 
@@ -222,9 +220,8 @@ impl CommitMessage {
     }
 
     pub fn recover_commit_seal_signer(&self) -> anyhow::Result<Address> {
-        Ok(self
-            .commit_seal
-            .recover_from_prehash(self.proposed_block_digest)?)
+        self.commit_seal
+            .recover_from_prehash(self.proposed_block_digest)
     }
 
     fn data_to_sign(&self) -> [u8; 32] {
@@ -271,9 +268,8 @@ impl CommitMessageSigned {
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        Ok(self
-            .signature
-            .recover_from_prehash(self.message.data_to_sign())?)
+        self.signature
+            .recover_from_prehash(self.message.data_to_sign())
     }
 }
 
@@ -323,9 +319,8 @@ impl RoundChangeMessageSigned {
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        Ok(self
-            .signature
-            .recover_from_prehash(self.message.data_to_sign())?)
+        self.signature
+            .recover_from_prehash(self.message.data_to_sign())
     }
 }
 

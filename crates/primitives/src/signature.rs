@@ -114,10 +114,10 @@ impl<'de> Deserialize<'de> for Signature {
     {
         if deserializer.is_human_readable() {
             let s: &str = Deserialize::deserialize(deserializer)?;
-            Self::from_str(s).map_err(|err| de::Error::custom(err))
+            Self::from_str(s).map_err(de::Error::custom)
         } else {
             let slice: &[u8] = Deserialize::deserialize(deserializer)?;
-            Self::from_slice(slice).map_err(|err| de::Error::custom(err))
+            Self::from_slice(slice).map_err(de::Error::custom)
         }
     }
 }
@@ -141,16 +141,16 @@ mod tests {
 
         // 64-bytes
         let s = "0x01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
-        assert!(matches!(Signature::from_str(s), Err(_)));
+        assert!(Signature::from_str(s).is_err());
         // 66-bytes
         let s = "0x010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
-        assert!(matches!(Signature::from_str(s), Err(_)));
+        assert!(Signature::from_str(s).is_err());
         // 65-bytes, no 0x-prefix
         let s = "0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
-        assert!(matches!(Signature::from_str(s), Err(_)));
+        assert!(Signature::from_str(s).is_err());
         // 65-bytes, invalid recovery id
         let s = "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010105";
-        assert!(matches!(Signature::from_str(s), Err(_)));
+        assert!(Signature::from_str(s).is_err());
     }
 
     #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
@@ -174,12 +174,11 @@ mod tests {
         assert_eq!(test_struct, test_struct_deserialized);
 
         // Missing 0x-prefix should fail
-        assert!(matches!(
+        assert!(
             serde_json::from_str::<TestStruct>(
                 r#"{"signature":"0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"}"#,
-            ),
-            Err(_)
-        ));
+            ).is_err()
+        );
     }
 
     #[test]

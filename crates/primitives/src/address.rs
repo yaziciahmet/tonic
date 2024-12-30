@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for Address {
     {
         if deserializer.is_human_readable() {
             let s: &str = Deserialize::deserialize(deserializer)?;
-            Self::from_str(s).map_err(|err| de::Error::custom(err))
+            Self::from_str(s).map_err(de::Error::custom)
         } else {
             let bytes: [u8; Self::SIZE] = Deserialize::deserialize(deserializer)?;
             Ok(Self(bytes))
@@ -127,13 +127,13 @@ mod tests {
 
         // 23-bytes
         let s = "0x0101010101010101010101010101010101010101010101";
-        assert!(matches!(Address::from_str(s), Err(_)));
+        assert!(Address::from_str(s).is_err());
         // 25-bytes
         let s = "0x01010101010101010101010101010101010101010101010101";
-        assert!(matches!(Address::from_str(s), Err(_)));
+        assert!(Address::from_str(s).is_err());
         // 24-bytes, no 0x-prefix
         let s = "010101010101010101010101010101010101010101010101";
-        assert!(matches!(Address::from_str(s), Err(_)));
+        assert!(Address::from_str(s).is_err());
     }
 
     #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
@@ -163,12 +163,10 @@ mod tests {
         assert_eq!(test_struct, test_struct_deserialized_uppercase);
 
         // Missing 0x-prefix should fail
-        assert!(matches!(
-            serde_json::from_str::<TestStruct>(
-                r#"{"address":"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"}"#,
-            ),
-            Err(_)
-        ));
+        assert!(serde_json::from_str::<TestStruct>(
+            r#"{"address":"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"}"#,
+        )
+        .is_err());
     }
 
     #[test]

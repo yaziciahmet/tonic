@@ -377,7 +377,7 @@ impl SharedRunState {
     async fn add_proposal(&self, proposal: ProposalMessageSigned) {
         let mut cur_proposal = self.proposal.write().await;
         assert!(
-            matches!(*cur_proposal, None),
+            cur_proposal.is_none(),
             "add_proposal should not be called twice"
         );
         *cur_proposal = Some(proposal);

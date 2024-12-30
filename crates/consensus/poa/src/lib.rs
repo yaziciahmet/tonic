@@ -5,6 +5,7 @@ pub mod ibft;
 pub mod messages;
 pub mod types;
 
+#[cfg(test)]
 mod tests {
     use async_trait::async_trait;
     use tokio::sync::oneshot;
