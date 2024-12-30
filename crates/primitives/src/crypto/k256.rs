@@ -6,7 +6,6 @@ pub fn sign_prehash(secret_key: &SecretKey, prehash: [u8; 32]) -> ([u8; 64], u8)
     let (recid, signature) = SECP256K1
         .sign_ecdsa_recoverable(&Message::from_digest(prehash), &secret_key)
         .serialize_compact();
-    // TODO: check if s is high or low
     (signature, i32::from(recid) as u8)
 }
 
@@ -23,7 +22,6 @@ pub fn recover_from_prehash(
 #[cfg(feature = "k256-rand")]
 pub fn generate_keypair() -> Keypair {
     Keypair::new_global(&mut secp256k1::rand::thread_rng())
-    // TODO: check valid pubkey secretkey
 }
 
 pub trait ToPublicKey {
