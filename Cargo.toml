@@ -1,8 +1,7 @@
 [workspace]
 members = [
     "bin/tonic",
-    # "crates/consensus/poa",
-    "crates/consensus/pos",
+    "crates/consensus/poa",
     "crates/database",
     "crates/p2p",
     "crates/primitives",
@@ -22,8 +21,7 @@ repository = "https://github.com/yaziciahmet/tonic"
 [workspace.dependencies]
 # Tonic dependencies
 tonic = { path = "bin/tonic", default-features = false }
-# tonic-consensus-poa = { path = "crates/consensus/poa", default-features = false }
-tonic-consensus-pos = { path = "crates/consensus/pos", default-features = false }
+tonic-consensus-poa = { path = "crates/consensus/poa", default-features = false }
 tonic-database = { path = "crates/database", default-features = false }
 tonic-p2p = { path = "crates/p2p", default-features = false }
 tonic-primitives = { path = "crates/primitives", default-features = false }
@@ -36,11 +34,11 @@ anyhow = { version = "1", default-features = false }
 async-trait = { version = "0.1", default-features = false }
 borsh = { version = "1.5", default-features = false, features = ["derive", "std"] }
 crypto-bigint = { version = "0.5.5", default-features = false, features = ["serde", "alloc"] }
-ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "std", "zeroize", "asm", "digest"] }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.24", default-features = false }
 rand = { version = "0.8" ,default-features = false, features = ["std", "std_rng"] }
+secp256k1 = { version = "0.30", default-features = false, features = ["global-context", "recovery"] }
 serde = { version = "1", default-features = false, features = ["derive"] }
 serde_json = { version = "1", default-features = false, features = ["std"] }
 sha2 = { version = "0.10", default-features = false, features = ["asm"] }

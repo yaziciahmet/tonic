@@ -7,7 +7,7 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-tonic-consensus-pos = { workspace = true }
+tonic-consensus-poa = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }

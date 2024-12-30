@@ -10,9 +10,8 @@ repository = { workspace = true }
 anyhow = { workspace = true }
 borsh = { workspace = true }
 crypto-bigint = { workspace = true }
-ed25519-dalek = { workspace = true }
 hex = { workspace = true }
-rand = { workspace = true, optional = true }
+secp256k1 = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 
@@ -21,5 +20,5 @@ serde_json = { workspace = true }
 
 [features]
 default = []
-test-helpers = ["ed25519-rand", "crypto-bigint/rand"]
-ed25519-rand = ["dep:rand", "ed25519-dalek/rand_core"]
+test-helpers = ["k256-rand", "crypto-bigint/rand"]
+k256-rand = ["secp256k1/rand"]

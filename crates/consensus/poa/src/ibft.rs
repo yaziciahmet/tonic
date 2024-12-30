@@ -5,7 +5,7 @@ use std::{iter, mem};
 use tokio::select;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
-use tonic_signer::Signer;
+use tonic_primitives::Signer;
 use tracing::{debug, error, info};
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};

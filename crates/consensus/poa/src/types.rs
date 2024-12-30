@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use tonic_primitives::crypto::sha512;
+use tonic_primitives::crypto::sha256;
 use tonic_primitives::{Address, Signature, Signer};
 
 use super::codec;
@@ -72,13 +72,14 @@ impl ProposalMessage {
         self.proposed_block_digest
     }
 
-    fn data_to_sign(&self) -> Vec<u8> {
-        codec::serialize(&(self.ty(), self.view, self.proposed_block_digest))
+    fn data_to_sign(&self) -> [u8; 32] {
+        let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
+        sha256(&bytes)
     }
 
     pub fn into_signed(self, signer: &Signer) -> ProposalMessageSigned {
-        let data = self.data_to_sign();
-        let signature = signer.sign(&data);
+        let prehash = self.data_to_sign();
+        let signature = signer.sign_prehash(prehash);
         ProposalMessageSigned {
             message: self,
             signature,
@@ -116,7 +117,7 @@ impl ProposalMessageSigned {
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         Ok(self
             .signature
-            .recover_address_from_prehash(&self.message.data_to_sign())?)
+            .recover_from_prehash(self.message.data_to_sign())?)
     }
 
     pub fn verify_digest(&self) -> bool {
@@ -150,14 +151,14 @@ impl PrepareMessage {
         self.proposed_block_digest
     }
 
-    fn data_to_sign(&self) -> B256 {
+    fn data_to_sign(&self) -> [u8; 32] {
         let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
-        keccak256(bytes)
+        sha256(&bytes)
     }
 
     pub fn into_signed(self, signer: &Signer) -> PrepareMessageSigned {
-        let hash = self.data_to_sign();
-        let signature = signer.sign_prehashed(hash);
+        let prehash = self.data_to_sign();
+        let signature = signer.sign_prehash(prehash);
         PrepareMessageSigned {
             message: self,
             signature,
@@ -168,7 +169,7 @@ impl PrepareMessage {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PrepareMessageSigned {
     message: PrepareMessage,
-    signature: PrimitiveSignature,
+    signature: Signature,
 }
 
 impl PrepareMessageSigned {
@@ -183,7 +184,7 @@ impl PrepareMessageSigned {
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         Ok(self
             .signature
-            .recover_address_from_prehash(&self.message.data_to_sign())?)
+            .recover_from_prehash(self.message.data_to_sign())?)
     }
 }
 
@@ -191,12 +192,12 @@ impl PrepareMessageSigned {
 pub struct CommitMessage {
     view: View,
     proposed_block_digest: [u8; 32],
-    commit_seal: PrimitiveSignature,
+    commit_seal: Signature,
 }
 
 impl CommitMessage {
     pub fn new(view: View, proposed_block_digest: [u8; 32], signer: &Signer) -> Self {
-        let commit_seal = signer.sign_prehashed(proposed_block_digest.into());
+        let commit_seal = signer.sign_prehash(proposed_block_digest);
         Self {
             view,
             proposed_block_digest,
@@ -216,29 +217,29 @@ impl CommitMessage {
         self.proposed_block_digest
     }
 
-    pub fn commit_seal(&self) -> PrimitiveSignature {
+    pub fn commit_seal(&self) -> Signature {
         self.commit_seal
     }
 
     pub fn recover_commit_seal_signer(&self) -> anyhow::Result<Address> {
         Ok(self
             .commit_seal
-            .recover_address_from_prehash(&self.proposed_block_digest.into())?)
+            .recover_from_prehash(self.proposed_block_digest)?)
     }
 
-    fn data_to_sign(&self) -> B256 {
+    fn data_to_sign(&self) -> [u8; 32] {
         let bytes = codec::serialize(&(
             self.ty(),
             self.view,
             self.proposed_block_digest,
             self.commit_seal,
         ));
-        keccak256(bytes)
+        sha256(&bytes)
     }
 
     pub fn into_signed(self, signer: &Signer) -> CommitMessageSigned {
-        let hash = self.data_to_sign();
-        let signature = signer.sign_prehashed(hash);
+        let prehash = self.data_to_sign();
+        let signature = signer.sign_prehash(prehash);
         CommitMessageSigned {
             message: self,
             signature,
@@ -249,7 +250,7 @@ impl CommitMessage {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct CommitMessageSigned {
     message: CommitMessage,
-    signature: PrimitiveSignature,
+    signature: Signature,
 }
 
 impl CommitMessageSigned {
@@ -261,7 +262,7 @@ impl CommitMessageSigned {
         self.message.proposed_block_digest
     }
 
-    pub fn commit_seal(&self) -> PrimitiveSignature {
+    pub fn commit_seal(&self) -> Signature {
         self.message.commit_seal
     }
 
@@ -272,7 +273,7 @@ impl CommitMessageSigned {
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         Ok(self
             .signature
-            .recover_address_from_prehash(&self.message.data_to_sign())?)
+            .recover_from_prehash(self.message.data_to_sign())?)
     }
 }
 
@@ -291,18 +292,18 @@ impl RoundChangeMessage {
         self.view
     }
 
-    fn data_to_sign(&self) -> B256 {
+    fn data_to_sign(&self) -> [u8; 32] {
         let bytes = codec::serialize(&(
             self.ty(),
             self.view,
             self.latest_prepared_proposed.as_ref().map(|(_, pc)| pc),
         ));
-        keccak256(bytes)
+        sha256(&bytes)
     }
 
     pub fn into_signed(self, signer: &Signer) -> RoundChangeMessageSigned {
-        let hash = self.data_to_sign();
-        let signature = signer.sign_prehashed(hash);
+        let prehash = self.data_to_sign();
+        let signature = signer.sign_prehash(prehash);
         RoundChangeMessageSigned {
             message: self,
             signature,
@@ -313,7 +314,7 @@ impl RoundChangeMessage {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct RoundChangeMessageSigned {
     message: RoundChangeMessage,
-    signature: PrimitiveSignature,
+    signature: Signature,
 }
 
 impl RoundChangeMessageSigned {
@@ -324,7 +325,7 @@ impl RoundChangeMessageSigned {
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         Ok(self
             .signature
-            .recover_address_from_prehash(&self.message.data_to_sign())?)
+            .recover_from_prehash(self.message.data_to_sign())?)
     }
 }
 
@@ -358,8 +359,8 @@ impl ProposedBlock {
 
 impl ProposedBlock {
     fn digest(&self) -> [u8; 32] {
-        let bytes = codec::serialize(self);
-        *keccak256(bytes)
+        let data = codec::serialize(self);
+        sha256(&data)
     }
 }
 
@@ -378,16 +379,14 @@ impl PreparedCertificate {
     }
 }
 
-pub type CommitSeals = Vec<PrimitiveSignature>;
-
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct FinalizationProof {
     round: u32,
-    commit_seals: CommitSeals,
+    commit_seals: Vec<Signature>,
 }
 
 impl FinalizationProof {
-    pub fn new(round: u32, commit_seals: CommitSeals) -> Self {
+    pub fn new(round: u32, commit_seals: Vec<Signature>) -> Self {
         Self {
             round,
             commit_seals,
@@ -398,7 +397,7 @@ impl FinalizationProof {
         self.round
     }
 
-    pub fn commit_seals(&self) -> &CommitSeals {
+    pub fn commit_seals(&self) -> &[Signature] {
         &self.commit_seals
     }
 }
@@ -410,7 +409,7 @@ pub struct FinalizedBlock {
 }
 
 impl FinalizedBlock {
-    pub fn new(proposed_block: ProposedBlock, commit_seals: CommitSeals) -> Self {
+    pub fn new(proposed_block: ProposedBlock, commit_seals: Vec<Signature>) -> Self {
         Self {
             proof: FinalizationProof::new(proposed_block.round, commit_seals),
             raw_eth_block: proposed_block.raw_eth_block,

@@ -1,43 +1,47 @@
-use crate::crypto::{sign_with_context, SigningKey};
+use crate::crypto::{sha256, sign_prehash, SecretKey, ToPublicKey};
 use crate::{Address, Signature};
 
 #[derive(Debug, Clone)]
 pub struct Signer {
-    signing_key: SigningKey,
+    secret_key: SecretKey,
     address: Address,
-    context: Vec<u8>,
 }
 
 impl Signer {
-    fn from_signing_key(signing_key: SigningKey, context: Vec<u8>) -> Self {
-        let address = Address::from(signing_key.verifying_key());
+    fn from_secret_key(secret_key: SecretKey) -> Self {
+        let address = Address::from(secret_key.to_public_key());
         Self {
-            signing_key,
+            secret_key,
             address,
-            context,
         }
     }
 
-    pub fn new(secret: [u8; 32], context: Vec<u8>) -> Self {
-        let signing_key = SigningKey::from_bytes(&secret);
-        Self::from_signing_key(signing_key, context)
+    pub fn new(secret: [u8; 32]) -> Self {
+        let secret_key = SecretKey::from_byte_array(&secret)
+            .expect("Signer should not be instantiated with invalid private key");
+        Self::from_secret_key(secret_key)
     }
 
-    pub fn from_bytes(secret: impl AsRef<[u8]>, context: Vec<u8>) -> anyhow::Result<Self> {
-        Ok(Self::new(secret.as_ref().try_into()?, context))
+    pub fn from_bytes(secret: impl AsRef<[u8]>) -> anyhow::Result<Self> {
+        Ok(Self::new(secret.as_ref().try_into()?))
     }
 
-    pub fn from_str(secret: &str, context: Vec<u8>) -> anyhow::Result<Self> {
+    pub fn from_str(secret: &str) -> anyhow::Result<Self> {
         if !secret.starts_with("0x") {
             return Err(anyhow::anyhow!("Signed secret key must have 0x-prefix"));
         }
 
-        Self::from_bytes(hex::decode(&secret[2..])?, context)
+        Self::from_bytes(hex::decode(&secret[2..])?)
     }
 
     pub fn sign(&self, message: &[u8]) -> Signature {
-        let signature_bytes = sign_with_context(&self.signing_key, message, &self.context);
-        Signature::from_bytes(signature_bytes)
+        let prehash = sha256(message);
+        self.sign_prehash(prehash)
+    }
+
+    pub fn sign_prehash(&self, prehash: [u8; 32]) -> Signature {
+        let (signature, recid) = sign_prehash(&self.secret_key, prehash);
+        Signature::from_parts(signature, recid).expect("Signing can not produce invalid signature")
     }
 
     #[inline(always)]
@@ -47,36 +51,13 @@ impl Signer {
 
     #[cfg(feature = "test-helpers")]
     pub fn random() -> Self {
-        Self::from_signing_key(crate::crypto::generate_key(), vec![])
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct SignVerifier {
-    context: Vec<u8>,
-}
-
-impl SignVerifier {
-    /// Creates new `SignVerifier` with the given context.
-    pub fn new(context: Vec<u8>) -> Self {
-        Self { context }
-    }
-
-    /// Verifies that the given signature is the message signed by the address.
-    /// Keep in mind that while signing the same context should be used while verifying.
-    pub fn verify(
-        &self,
-        address: Address,
-        message: &[u8],
-        signature: Signature,
-    ) -> anyhow::Result<()> {
-        signature.verify_with_context(address, message, &self.context)
+        Self::from_secret_key(crate::crypto::generate_keypair().secret_key())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{SignVerifier, Signer};
+    use super::Signer;
 
     #[test]
     fn sign_and_verify() {
@@ -84,8 +65,6 @@ mod tests {
         let message = &[1, 2, 3];
 
         let signature = signer.sign(message);
-        SignVerifier::default()
-            .verify(signer.address(), message, signature)
-            .unwrap();
+        assert_eq!(signature.recover(message).unwrap(), signer.address());
     }
 }

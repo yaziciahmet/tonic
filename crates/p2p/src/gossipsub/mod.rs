@@ -18,9 +18,9 @@ pub fn build_gossipsub_behaviour(p2p_config: &Config) -> gossipsub::Behaviour {
     .expect("Gossipsub behaviour should be initialized");
 
     let topics = if p2p_config.is_validator {
-        vec![CONSENSUS_TOPIC]
+        vec![BLOCK_TOPIC, CONSENSUS_TOPIC]
     } else {
-        vec![]
+        vec![BLOCK_TOPIC]
     };
     // Subscribe to gossip topics
     for topic in topics {

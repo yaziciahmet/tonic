@@ -1,5 +1,5 @@
 use tokio::sync::{mpsc, oneshot};
-use tonic_signer::Signer;
+use tonic_primitives::Signer;
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::ibft::IBFT;

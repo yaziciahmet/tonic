@@ -1,24 +1,23 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::crypto::VerifyingKey;
+use crate::crypto::{sha256, PublicKey};
 
 /// `Address` is a simple byte wrapper for easy serde operations and type conversions.
-/// It doesn't validate any Ed25519 public key properties until explicitly verified.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize,
 )]
-pub struct Address([u8; 32]);
+pub struct Address([u8; 24]);
 
 impl Address {
-    pub const SIZE: usize = 32;
+    pub const SIZE: usize = 24;
 
     /// Create an `Address` from the given bytes.
     pub const fn from_bytes(bytes: [u8; Self::SIZE]) -> Self {
         Self(bytes)
     }
 
-    /// Create an `Address` from the given slice. Expects 32 bytes.
+    /// Create an `Address` from the given slice. Expects 24 bytes.
     #[inline(always)]
     pub fn from_slice(slice: &[u8]) -> anyhow::Result<Self> {
         Ok(Self(slice.try_into()?))
@@ -62,21 +61,15 @@ impl Address {
     /// Generate a random address.
     #[cfg(feature = "test-helpers")]
     pub fn random() -> Self {
-        let signing_key = crate::crypto::generate_key();
-        signing_key.verifying_key().into()
+        let keypair = crate::crypto::generate_keypair();
+        keypair.public_key().into()
     }
 }
 
-impl From<VerifyingKey> for Address {
-    fn from(verifying_key: VerifyingKey) -> Self {
-        Self(verifying_key.to_bytes())
-    }
-}
-
-impl TryFrom<Address> for VerifyingKey {
-    type Error = anyhow::Error;
-    fn try_from(address: Address) -> Result<Self, Self::Error> {
-        VerifyingKey::from_bytes(&address.0).map_err(|err| anyhow::anyhow!(err))
+impl From<PublicKey> for Address {
+    fn from(public_key: PublicKey) -> Self {
+        let hash = sha256(&public_key.serialize());
+        Self(hash[8..].try_into().expect("Has exactly 24 bytes"))
     }
 }
 
@@ -127,19 +120,19 @@ mod tests {
 
     #[test]
     fn hex_address() {
-        let s = "0x0101010101010101010101010101010101010101010101010101010101010101".to_string();
+        let s = "0x010101010101010101010101010101010101010101010101".to_string();
         let addr = Address::from_str(&s).unwrap();
         assert_eq!(s, addr.to_string());
-        assert_eq!([1; 32], addr.to_bytes());
+        assert_eq!([1; 24], addr.to_bytes());
 
-        // 31-bytes
-        let s = "0x01010101010101010101010101010101010101010101010101010101010101";
+        // 23-bytes
+        let s = "0x0101010101010101010101010101010101010101010101";
         assert!(matches!(Address::from_str(s), Err(_)));
-        // 33-bytes
-        let s = "0x010101010101010101010101010101010101010101010101010101010101010101";
+        // 25-bytes
+        let s = "0x01010101010101010101010101010101010101010101010101";
         assert!(matches!(Address::from_str(s), Err(_)));
-        // 32-bytes, no 0x-prefix
-        let s = "0101010101010101010101010101010101010101010101010101010101010101";
+        // 24-bytes, no 0x-prefix
+        let s = "010101010101010101010101010101010101010101010101";
         assert!(matches!(Address::from_str(s), Err(_)));
     }
 
@@ -151,20 +144,20 @@ mod tests {
     #[test]
     fn serde_address() {
         let test_struct = TestStruct {
-            address: Address::from_bytes([10; 32]),
+            address: Address::from_bytes([10; 24]),
         };
 
         let json = serde_json::to_string(&test_struct).unwrap();
         assert_eq!(
             &json,
-            r#"{"address":"0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"}"#
+            r#"{"address":"0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"}"#
         );
 
         let test_struct_deserialized: TestStruct = serde_json::from_str(&json).unwrap();
         assert_eq!(test_struct, test_struct_deserialized);
 
         let test_struct_deserialized_uppercase: TestStruct = serde_json::from_str(
-            r#"{"address":"0x0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A"}"#,
+            r#"{"address":"0x0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A"}"#,
         )
         .unwrap();
         assert_eq!(test_struct, test_struct_deserialized_uppercase);
@@ -172,7 +165,7 @@ mod tests {
         // Missing 0x-prefix should fail
         assert!(matches!(
             serde_json::from_str::<TestStruct>(
-                r#"{"address":"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"}"#,
+                r#"{"address":"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"}"#,
             ),
             Err(_)
         ));
@@ -181,9 +174,9 @@ mod tests {
     #[test]
     fn borsh_address() {
         let test_struct = TestStruct {
-            address: Address::from_bytes([10; 32]),
+            address: Address::from_bytes([10; 24]),
         };
-        assert_eq!(&borsh::to_vec(&test_struct).unwrap(), &[10; 32]);
-        assert_eq!(test_struct, borsh::from_slice(&[10; 32]).unwrap());
+        assert_eq!(&borsh::to_vec(&test_struct).unwrap(), &[10; 24]);
+        assert_eq!(test_struct, borsh::from_slice(&[10; 24]).unwrap());
     }
 }

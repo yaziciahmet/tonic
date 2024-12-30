@@ -2,28 +2,42 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::address::Address;
-use crate::crypto::verify_with_context;
+use crate::crypto::{recover_from_prehash, sha256};
 
 /// `Signature` is a simple byte wrapper for easy serde operations and type conversions.
-/// It doesn't validate any Ed25519 signature properties until explicitly verified.
+/// It only verifies the recovery id and nothing else until signer is recovered explicitly.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize,
 )]
-pub struct Signature([u8; 64]);
+pub struct Signature([u8; 65]);
 
 impl Signature {
-    pub const SIZE: usize = 64;
+    pub const SIZE: usize = 65;
 
     /// Create `Signature` from bytes.
     #[inline(always)]
-    pub fn from_bytes(bytes: [u8; Self::SIZE]) -> Self {
-        Self(bytes)
+    pub fn from_bytes(bytes: [u8; Self::SIZE]) -> anyhow::Result<Self> {
+        let v = bytes[64];
+        if v <= 3 {
+            Ok(Self(bytes))
+        } else {
+            Err(anyhow::anyhow!("Invalid signature recovery id {v}"))
+        }
     }
 
-    /// Create `Signature` from slice. Expects slice to be of size 64.
+    /// Create `Signature` from raw signature and recovery id
+    #[inline(always)]
+    pub fn from_parts(signature: [u8; 64], recid: u8) -> anyhow::Result<Self> {
+        let mut bytes = [0; 65];
+        bytes[..64].copy_from_slice(&signature);
+        bytes[64] = recid;
+        Self::from_bytes(bytes)
+    }
+
+    /// Create `Signature` from slice. Expects slice to be of size 65.
     #[inline(always)]
     pub fn from_slice(slice: &[u8]) -> anyhow::Result<Self> {
-        Ok(Self::from_bytes(slice.try_into()?))
+        Self::from_bytes(slice.try_into()?)
     }
 
     /// Create `Signature` from 0x-prefixed hex string
@@ -34,7 +48,7 @@ impl Signature {
 
         let mut bytes = [0; Self::SIZE];
         hex::decode_to_slice(&s[2..], &mut bytes)?;
-        Ok(Self(bytes))
+        Self::from_bytes(bytes)
     }
 
     /// Get signature bytes.
@@ -54,19 +68,19 @@ impl Signature {
         bytes
     }
 
-    /// Verifiy the signer of the signature from the message with context
-    pub fn verify_with_context(
-        &self,
-        address: Address,
-        message: &[u8],
-        context: &[u8],
-    ) -> anyhow::Result<()> {
-        Ok(verify_with_context(
-            &address.try_into()?,
-            message,
-            &self.0,
-            context,
-        )?)
+    pub fn recover(&self, message: &[u8]) -> anyhow::Result<Address> {
+        let prehash = sha256(message);
+        self.recover_from_prehash(prehash)
+    }
+
+    pub fn recover_from_prehash(&self, prehash: [u8; 32]) -> anyhow::Result<Address> {
+        let (recid, signature) = self.0.split_last().expect("Can not be empty");
+        Ok(recover_from_prehash(
+            prehash,
+            signature.try_into().expect("Has exactly 64 bytes"),
+            *recid,
+        )?
+        .into())
     }
 }
 
@@ -113,28 +127,29 @@ mod tests {
     use borsh::{BorshDeserialize, BorshSerialize};
     use serde::{Deserialize, Serialize};
 
-    use crate::{
-        address::Address,
-        crypto::{generate_key, sign_with_context},
-    };
+    use crate::address::Address;
+    use crate::crypto::{generate_keypair, sha256, sign_prehash};
 
     use super::Signature;
 
     #[test]
     fn hex_signature() {
-        let s = "0x01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101".to_string();
+        let s = "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101".to_string();
         let signature = Signature::from_str(&s).unwrap();
         assert_eq!(s, signature.to_string());
-        assert_eq!([1; 64], signature.to_bytes());
+        assert_eq!([1; 65], signature.to_bytes());
 
-        // 63-bytes
-        let s = "0x010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
+        // 64-bytes
+        let s = "0x01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
         assert!(matches!(Signature::from_str(s), Err(_)));
-        // 65-bytes
-        let s = "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
+        // 66-bytes
+        let s = "0x010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
         assert!(matches!(Signature::from_str(s), Err(_)));
-        // 64-bytes, no 0x-prefix
-        let s = "01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
+        // 65-bytes, no 0x-prefix
+        let s = "0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
+        assert!(matches!(Signature::from_str(s), Err(_)));
+        // 65-bytes, invalid recovery id
+        let s = "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010105";
         assert!(matches!(Signature::from_str(s), Err(_)));
     }
 
@@ -146,13 +161,13 @@ mod tests {
     #[test]
     fn serde_signature() {
         let test_struct = TestStruct {
-            signature: Signature::from_bytes([1; 64]),
+            signature: Signature::from_bytes([1; 65]).unwrap(),
         };
 
         let json = serde_json::to_string(&test_struct).unwrap();
         assert_eq!(
             &json,
-            r#"{"signature":"0x01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"}"#
+            r#"{"signature":"0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"}"#
         );
 
         let test_struct_deserialized: TestStruct = serde_json::from_str(&json).unwrap();
@@ -161,7 +176,7 @@ mod tests {
         // Missing 0x-prefix should fail
         assert!(matches!(
             serde_json::from_str::<TestStruct>(
-                r#"{"signature":"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"}"#,
+                r#"{"signature":"0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"}"#,
             ),
             Err(_)
         ));
@@ -170,23 +185,24 @@ mod tests {
     #[test]
     fn borsh_signature() {
         let test_struct = TestStruct {
-            signature: Signature::from_bytes([1; 64]),
+            signature: Signature::from_bytes([1; 65]).unwrap(),
         };
-        assert_eq!(&borsh::to_vec(&test_struct).unwrap(), &[1; 64]);
-        assert_eq!(test_struct, borsh::from_slice(&[1; 64]).unwrap());
+        assert_eq!(&borsh::to_vec(&test_struct).unwrap(), &[1; 65]);
+        assert_eq!(test_struct, borsh::from_slice(&[1; 65]).unwrap());
     }
 
     #[test]
-    fn verify_with_context() {
-        let signing_key = generate_key();
+    fn recover() {
+        let keypair = generate_keypair();
         let message = &[1, 2, 3];
-        let context = b"TonicMainnet";
+        let prehash = sha256(message);
 
-        let signature_bytes = sign_with_context(&signing_key, message, context);
+        let (signature_bytes, recid) = sign_prehash(&keypair.secret_key(), prehash);
+        let signature = Signature::from_parts(signature_bytes, recid).unwrap();
 
-        let signature = Signature::from_bytes(signature_bytes);
-        signature
-            .verify_with_context(Address::from(signing_key.verifying_key()), message, context)
-            .unwrap();
+        assert_eq!(
+            signature.recover_from_prehash(prehash).unwrap(),
+            Address::from(keypair.public_key()),
+        );
     }
 }

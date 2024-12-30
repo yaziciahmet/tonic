@@ -6,5 +6,5 @@ mod u256;
 
 pub use address::Address;
 pub use signature::Signature;
-pub use signer::{SignVerifier, Signer};
+pub use signer::Signer;
 pub use u256::U256;
