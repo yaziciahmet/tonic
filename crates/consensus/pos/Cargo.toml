@@ -1,5 +1,5 @@
 [package]
-name = "tonic-p2p"
+name = "tonic-consensus-pos"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
@@ -7,23 +7,18 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-tonic-consensus-pos = { workspace = true }
+tonic-primitives = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 borsh = { workspace = true }
-futures = { workspace = true }
-libp2p = { version = "0.54", default-features = false, features = [
-  "gossipsub",
-  "identify",
-  "kad",
-  "macros",
-  "noise",
-  "secp256k1",
-  "tcp",
-  "tokio",
-  "yamux",
-] }
-sha2 = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tonic-tracing = { workspace = true }
+
+[features]
+default = []
+test-helpers = ["tonic-primitives/test-helpers"]

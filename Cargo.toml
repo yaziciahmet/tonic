@@ -1,13 +1,14 @@
 [workspace]
 members = [
     "bin/tonic",
-    "crates/consensus",
+    # "crates/consensus/poa",
+    "crates/consensus/pos",
     "crates/database",
     "crates/p2p",
     "crates/primitives",
     "crates/rpc",
-    "crates/signer",
-    "crates/txpool",
+    "crates/tracing",
+    # "crates/txpool",
 ]
 resolver = "2"
 
@@ -21,36 +22,30 @@ repository = "https://github.com/yaziciahmet/tonic"
 [workspace.dependencies]
 # Tonic dependencies
 tonic = { path = "bin/tonic", default-features = false }
-tonic-consensus = { path = "crates/consensus", default-features = false }
+# tonic-consensus-poa = { path = "crates/consensus/poa", default-features = false }
+tonic-consensus-pos = { path = "crates/consensus/pos", default-features = false }
 tonic-database = { path = "crates/database", default-features = false }
 tonic-p2p = { path = "crates/p2p", default-features = false }
 tonic-primitives = { path = "crates/primitives", default-features = false }
 tonic-rpc = { path = "crates/rpc", default-features = false }
-tonic-signer = { path = "crates/signer", default-features = false }
-tonic-txpool = { path = "crates/txpool", default-features = false }
-
-# Alloy dependencies
-alloy-consensus = { version = "0.6", default-features = false }
-alloy-eips = { version = "0.6", default-features = false }
-alloy-primitives = { version = "0.8", default-features = false }
-# Reth dependencies
-reth-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.2", default-features = false }
+tonic-tracing = { path = "crates/tracing", default-features = false }
+# tonic-txpool = { path = "crates/txpool", default-features = false }
 
 # Common dependencies
 anyhow = { version = "1", default-features = false }
 async-trait = { version = "0.1", default-features = false }
 borsh = { version = "1.5", default-features = false, features = ["derive", "std"] }
-bytemuck = { version = "1", default-features = false }
+crypto-bigint = { version = "0.5.5", default-features = false, features = ["serde", "alloc"] }
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "std", "zeroize", "asm", "digest"] }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.24", default-features = false }
-k256 = { version = "0.13", default-features = false }
 rand = { version = "0.8" ,default-features = false, features = ["std", "std_rng"] }
 serde = { version = "1", default-features = false, features = ["derive"] }
-sha2 = { version = "0.10", default-features = false }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+sha2 = { version = "0.10", default-features = false, features = ["asm"] }
 tempfile = { version = "3", default-features = false }
 thiserror = { version = "2", default-features = false }
-tiny-keccak = { version = "2", default-features = false }
-tokio = { version = "1.41", default-features = false, features = ["rt-multi-thread", "sync", "macros", "time"] }
+tokio = { version = "1.42", default-features = false, features = ["rt-multi-thread", "sync", "macros", "time"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = "0.3"

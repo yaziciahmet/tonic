@@ -1,4 +1,4 @@
-use tonic::initialize_tracing;
+use tonic_tracing::initialize_tracing;
 use tracing::Level;
 
 #[tokio::main]

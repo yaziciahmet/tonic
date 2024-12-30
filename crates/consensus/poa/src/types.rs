@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use tonic_primitives::{keccak256, Address, PrimitiveSignature, B256};
-use tonic_signer::Signer;
+use tonic_primitives::crypto::sha512;
+use tonic_primitives::{Address, Signature, Signer};
 
 use super::codec;
 
@@ -72,14 +72,13 @@ impl ProposalMessage {
         self.proposed_block_digest
     }
 
-    fn data_to_sign(&self) -> B256 {
-        let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
-        keccak256(bytes)
+    fn data_to_sign(&self) -> Vec<u8> {
+        codec::serialize(&(self.ty(), self.view, self.proposed_block_digest))
     }
 
     pub fn into_signed(self, signer: &Signer) -> ProposalMessageSigned {
-        let hash = self.data_to_sign();
-        let signature = signer.sign_prehashed(hash);
+        let data = self.data_to_sign();
+        let signature = signer.sign(&data);
         ProposalMessageSigned {
             message: self,
             signature,
@@ -94,7 +93,7 @@ impl ProposalMessage {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposalMessageSigned {
     message: ProposalMessage,
-    signature: PrimitiveSignature,
+    signature: Signature,
 }
 
 impl ProposalMessageSigned {

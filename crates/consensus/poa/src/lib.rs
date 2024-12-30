@@ -8,8 +8,7 @@ pub mod types;
 mod tests {
     use async_trait::async_trait;
     use tokio::sync::oneshot;
-    use tonic_primitives::Address;
-    use tonic_signer::Signer;
+    use tonic_primitives::{Address, Signer};
 
     use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
     use crate::engine::ConsensusEngine;
@@ -53,7 +52,7 @@ mod tests {
 
     #[tokio::test]
     async fn ibft_run() {
-        tonic::initialize_tracing(tracing::Level::DEBUG);
+        tonic_tracing::initialize_tracing(tracing::Level::DEBUG);
         let mock = Mock {};
         let signer = Signer::random();
         let engine =

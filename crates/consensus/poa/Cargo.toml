@@ -1,5 +1,5 @@
 [package]
-name = "tonic-consensus"
+name = "tonic-consensus-poa"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
@@ -8,7 +8,6 @@ repository = { workspace = true }
 
 [dependencies]
 tonic-primitives = { workspace = true }
-tonic-signer = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -18,8 +17,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tonic = { workspace = true }
+tonic-tracing = { workspace = true }
 
 [features]
 default = []
-test-helpers = ["tonic-signer/test-helpers"]
+test-helpers = ["tonic-primitives/test-helpers"]

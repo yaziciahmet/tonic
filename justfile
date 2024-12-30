@@ -21,3 +21,7 @@ fmt:
 # Test everything
 test:
     cargo test --workspace --all-targets --all-features
+
+# Find unused dependencies
+udeps:
+    cargo +nightly udeps

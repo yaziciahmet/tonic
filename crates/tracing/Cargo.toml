@@ -1,16 +1,10 @@
 [package]
-name = "tonic"
+name = "tonic-tracing"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-tonic-tracing = { workspace = true }
-
-tokio = { workspace = true }
 tracing = { workspace = true }
-
-[[bin]]
-name = "tonic"
-path = "src/main.rs"
+tracing-subscriber = { workspace = true, features = ["std", "fmt"] }

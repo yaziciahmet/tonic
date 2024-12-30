@@ -7,12 +7,19 @@ authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-alloy-consensus = { workspace = true }
-alloy-eips = { workspace = true }
-alloy-primitives = { workspace = true }
+anyhow = { workspace = true }
 borsh = { workspace = true }
-reth-primitives = { workspace = true }
+crypto-bigint = { workspace = true }
+ed25519-dalek = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true, optional = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [features]
 default = []
-test-helpers = []
+test-helpers = ["ed25519-rand", "crypto-bigint/rand"]
+ed25519-rand = ["dep:rand", "ed25519-dalek/rand_core"]
