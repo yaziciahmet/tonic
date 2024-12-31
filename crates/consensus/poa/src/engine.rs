@@ -60,11 +60,13 @@ where
         cancel_rx: oneshot::Receiver<()>,
     ) -> Option<FinalizedBlock> {
         let finalized_block = self.ibft.run(height, cancel_rx).await;
-
-        self.message_handler.update_height(height);
-        self.message_handler.prune().await;
-
-        finalized_block
+        if finalized_block.is_some() {
+            self.message_handler.update_height(height);
+            self.message_handler.prune().await;
+            finalized_block
+        } else {
+            None
+        }
     }
 
     /// Spawns a background tokio task which handles incoming P2P consensus messages.
