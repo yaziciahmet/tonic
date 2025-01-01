@@ -125,6 +125,36 @@ impl ProposalMessageSigned {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct ProposalMetadata {
+    view: View,
+    proposed_block_digest: [u8; 32],
+    signature: Signature,
+}
+
+impl ProposalMetadata {
+    pub fn ty(&self) -> MessageType {
+        MessageType::Proposal
+    }
+
+    pub fn view(&self) -> View {
+        self.view
+    }
+
+    pub fn proposed_block_digest(&self) -> [u8; 32] {
+        self.proposed_block_digest
+    }
+
+    fn data_to_sign(&self) -> [u8; 32] {
+        let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
+        sha256(&bytes)
+    }
+
+    pub fn recover_signer(&self) -> anyhow::Result<Address> {
+        self.signature.recover_from_prehash(self.data_to_sign())
+    }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PrepareMessage {
     view: View,
     proposed_block_digest: [u8; 32],
@@ -361,12 +391,12 @@ impl ProposedBlock {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PreparedCertificate {
-    proposal_message: ProposalMessageSigned,
+    proposal_message: ProposalMetadata,
     prepare_messages: Vec<PrepareMessageSigned>,
 }
 
 impl PreparedCertificate {
-    pub fn new(proposal: ProposalMessageSigned, prepares: Vec<PrepareMessageSigned>) -> Self {
+    pub fn new(proposal: ProposalMetadata, prepares: Vec<PrepareMessageSigned>) -> Self {
         Self {
             proposal_message: proposal,
             prepare_messages: prepares,
