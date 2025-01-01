@@ -115,7 +115,12 @@ where
                     info!("Finished IBFT round");
                     abort();
 
-                    let proposed_block = self.messages.take_proposal_message(view).await.expect("Proposal must exist when round finished").into_proposed_block();
+                    let proposed_block = self
+                        .messages
+                        .take_proposal_message(view)
+                        .await
+                        .expect("Proposal must exist when round finished")
+                        .into_proposed_block();
                     return Some(FinalizedBlock::new(proposed_block, commit_seals));
                 }
             }
