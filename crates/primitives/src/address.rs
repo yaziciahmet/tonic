@@ -25,7 +25,7 @@ impl Address {
 
     /// Create `Address` from 0x-prefixed hex string.
     #[inline(always)]
-    pub fn from_str(s: &str) -> anyhow::Result<Self> {
+    pub fn from_hex(s: &str) -> anyhow::Result<Self> {
         if !s.starts_with("0x") {
             return Err(anyhow::anyhow!("Address must have 0x-prefix"));
         }
@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for Address {
     {
         if deserializer.is_human_readable() {
             let s: &str = Deserialize::deserialize(deserializer)?;
-            Self::from_str(s).map_err(de::Error::custom)
+            Self::from_hex(s).map_err(de::Error::custom)
         } else {
             let bytes: [u8; Self::SIZE] = Deserialize::deserialize(deserializer)?;
             Ok(Self(bytes))
@@ -121,19 +121,19 @@ mod tests {
     #[test]
     fn hex_address() {
         let s = "0x010101010101010101010101010101010101010101010101".to_string();
-        let addr = Address::from_str(&s).unwrap();
+        let addr = Address::from_hex(&s).unwrap();
         assert_eq!(s, addr.to_string());
         assert_eq!([1; 24], addr.to_bytes());
 
         // 23-bytes
         let s = "0x0101010101010101010101010101010101010101010101";
-        assert!(Address::from_str(s).is_err());
+        assert!(Address::from_hex(s).is_err());
         // 25-bytes
         let s = "0x01010101010101010101010101010101010101010101010101";
-        assert!(Address::from_str(s).is_err());
+        assert!(Address::from_hex(s).is_err());
         // 24-bytes, no 0x-prefix
         let s = "010101010101010101010101010101010101010101010101";
-        assert!(Address::from_str(s).is_err());
+        assert!(Address::from_hex(s).is_err());
     }
 
     #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]

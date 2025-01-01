@@ -41,7 +41,7 @@ impl Signature {
     }
 
     /// Create `Signature` from 0x-prefixed hex string
-    pub fn from_str(s: &str) -> anyhow::Result<Self> {
+    pub fn from_hex(s: &str) -> anyhow::Result<Self> {
         if !s.starts_with("0x") {
             return Err(anyhow::anyhow!("Signature must have 0x-prefix"));
         }
@@ -114,7 +114,7 @@ impl<'de> Deserialize<'de> for Signature {
     {
         if deserializer.is_human_readable() {
             let s: &str = Deserialize::deserialize(deserializer)?;
-            Self::from_str(s).map_err(de::Error::custom)
+            Self::from_hex(s).map_err(de::Error::custom)
         } else {
             let slice: &[u8] = Deserialize::deserialize(deserializer)?;
             Self::from_slice(slice).map_err(de::Error::custom)
@@ -135,22 +135,22 @@ mod tests {
     #[test]
     fn hex_signature() {
         let s = "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101".to_string();
-        let signature = Signature::from_str(&s).unwrap();
+        let signature = Signature::from_hex(&s).unwrap();
         assert_eq!(s, signature.to_string());
         assert_eq!([1; 65], signature.to_bytes());
 
         // 64-bytes
         let s = "0x01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
-        assert!(Signature::from_str(s).is_err());
+        assert!(Signature::from_hex(s).is_err());
         // 66-bytes
         let s = "0x010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
-        assert!(Signature::from_str(s).is_err());
+        assert!(Signature::from_hex(s).is_err());
         // 65-bytes, no 0x-prefix
         let s = "0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101";
-        assert!(Signature::from_str(s).is_err());
+        assert!(Signature::from_hex(s).is_err());
         // 65-bytes, invalid recovery id
         let s = "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010105";
-        assert!(Signature::from_str(s).is_err());
+        assert!(Signature::from_hex(s).is_err());
     }
 
     #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
