@@ -303,7 +303,27 @@ impl CommitMessageSigned {
     }
 }
 
-pub type PreparedProposed = (ProposedBlock, PreparedCertificate);
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct PreparedProposed {
+    proposed_block: ProposedBlock,
+    prepared_certificate: PreparedCertificate,
+}
+
+impl PreparedProposed {
+    pub fn new(proposal: ProposalMessageSigned, prepares: Vec<PrepareMessageSigned>) -> Self {
+        let proposal_meta = ProposalMetadata {
+            view: proposal.message.view,
+            proposed_block_digest: proposal.message.proposed_block_digest,
+            signature: proposal.signature,
+        };
+        let proposed_block = proposal.message.proposed_block;
+
+        Self {
+            proposed_block,
+            prepared_certificate: PreparedCertificate::new(proposal_meta, prepares),
+        }
+    }
+}
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct RoundChangeMessage {
@@ -331,7 +351,9 @@ impl RoundChangeMessage {
         let bytes = codec::serialize(&(
             self.ty(),
             self.view,
-            self.latest_prepared_proposed.as_ref().map(|(_, pc)| pc),
+            self.latest_prepared_proposed
+                .as_ref()
+                .map(|p| &p.prepared_certificate),
         ));
         sha256(&bytes)
     }
@@ -400,14 +422,14 @@ impl ProposedBlock {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PreparedCertificate {
-    proposal_message: ProposalMetadata,
+    proposal_meta: ProposalMetadata,
     prepare_messages: Vec<PrepareMessageSigned>,
 }
 
 impl PreparedCertificate {
-    pub fn new(proposal: ProposalMetadata, prepares: Vec<PrepareMessageSigned>) -> Self {
+    pub fn new(proposal_meta: ProposalMetadata, prepares: Vec<PrepareMessageSigned>) -> Self {
         Self {
-            proposal_message: proposal,
+            proposal_meta,
             prepare_messages: prepares,
         }
     }
