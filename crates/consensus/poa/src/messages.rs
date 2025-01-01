@@ -329,6 +329,7 @@ impl ConsensusMessages {
         }
     }
 
+    /// Verifies and prunes the prepare messages for the given view with the given verify_fn, and returns the final count.
     pub async fn get_valid_prepare_count<F>(&self, view: View, verify_fn: F) -> usize
     where
         F: Fn(&PrepareMessageSigned) -> bool,
@@ -342,6 +343,8 @@ impl ConsensusMessages {
         messages.len()
     }
 
+    /// Verifies and prunes the commit messages for the given view with the given verify_fn.
+    /// Returns commit seals if final count is >= quorum, and the final count.
     pub async fn get_valid_commit_seals<F>(
         &self,
         view: View,
@@ -366,6 +369,7 @@ impl ConsensusMessages {
         (commit_seals, messages.len())
     }
 
+    /// Takes the proposal message for the given view.
     pub async fn take_proposal_message(&self, view: View) -> Option<ProposalMessageSigned> {
         let mut proposal_messages = self.proposal_messages.lock().await;
         match proposal_messages.view_entry(view) {
