@@ -22,16 +22,16 @@ impl Signer {
         Self::from_secret_key(secret_key)
     }
 
-    pub fn from_bytes(secret: impl AsRef<[u8]>) -> anyhow::Result<Self> {
+    pub fn from_secret_bytes(secret: impl AsRef<[u8]>) -> anyhow::Result<Self> {
         Ok(Self::new(secret.as_ref().try_into()?))
     }
 
-    pub fn from_str(secret: &str) -> anyhow::Result<Self> {
+    pub fn from_secret_str(secret: &str) -> anyhow::Result<Self> {
         if !secret.starts_with("0x") {
             return Err(anyhow::anyhow!("Signed secret key must have 0x-prefix"));
         }
 
-        Self::from_bytes(hex::decode(&secret[2..])?)
+        Self::from_secret_bytes(hex::decode(&secret[2..])?)
     }
 
     pub fn sign(&self, message: &[u8]) -> Signature {
