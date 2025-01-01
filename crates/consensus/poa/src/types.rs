@@ -392,6 +392,7 @@ impl ProposedBlock {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PreparedCertificate {
     proposal_message: ProposalMetadata,
+    // TODO: I feel like we can even make this one PrepareSignatures
     prepare_messages: Vec<PrepareMessageSigned>,
 }
 
