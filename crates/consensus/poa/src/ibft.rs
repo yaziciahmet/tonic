@@ -98,6 +98,8 @@ where
                 _ = timeout => {
                     info!("Round timeout");
                     abort();
+
+                    self.handle_timeout(view, state.get().await).await;
                     view.round += 1;
                 }
                 _ = future_proposal_rx => {
@@ -337,6 +339,14 @@ where
         });
 
         (rx, task)
+    }
+
+    async fn handle_timeout(&self, view: View, state: RunState) {
+        if state > RunState::Prepare {
+            // if last run got past prepare stage, we now have a new prepared proposed
+        } else {
+            // use the last known prepared proposed
+        }
     }
 
     fn get_round_timeout(&self, round: u32) -> Duration {
