@@ -303,13 +303,22 @@ impl CommitMessageSigned {
     }
 }
 
+pub type PreparedProposed = (ProposedBlock, PreparedCertificate);
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct RoundChangeMessage {
     view: View,
-    latest_prepared_proposed: Option<(ProposedBlock, PreparedCertificate)>,
+    latest_prepared_proposed: Option<PreparedProposed>,
 }
 
 impl RoundChangeMessage {
+    pub fn new(view: View, latest_prepared_proposed: Option<PreparedProposed>) -> Self {
+        Self {
+            view,
+            latest_prepared_proposed,
+        }
+    }
+
     pub fn ty(&self) -> MessageType {
         MessageType::RoundChange
     }
@@ -392,7 +401,6 @@ impl ProposedBlock {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct PreparedCertificate {
     proposal_message: ProposalMetadata,
-    // TODO: I feel like we can even make this one PrepareSignatures
     prepare_messages: Vec<PrepareMessageSigned>,
 }
 
