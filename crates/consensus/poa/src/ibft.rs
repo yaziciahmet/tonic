@@ -164,6 +164,7 @@ where
                 .block_builder
                 .build_block(view.height)
                 .map_err(IBFTError::BlockBuild)?;
+            debug!("Built the proposal block");
 
             let proposal =
                 ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer);
