@@ -7,6 +7,8 @@ pub mod types;
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use async_trait::async_trait;
     use tokio::sync::oneshot;
     use tonic_primitives::{Address, Signer};
@@ -56,12 +58,20 @@ mod tests {
         tonic_tracing::initialize_tracing(tracing::Level::DEBUG);
         let mock = Mock {};
         let signer = Signer::random();
-        let engine =
-            ConsensusEngine::new(mock.clone(), mock.clone(), mock.clone(), mock, 1, signer);
+        let engine = ConsensusEngine::new(
+            mock.clone(),
+            mock.clone(),
+            mock.clone(),
+            mock,
+            1,
+            signer,
+            Duration::from_secs(1),
+        );
 
         let (_tx, rx) = oneshot::channel();
-        let finalized_block = engine.run_height(2, rx).await;
-
+        let _finalized_block = engine.run_height(2, rx).await;
+        let (_tx, rx) = oneshot::channel();
+        let finalized_block = engine.run_height(3, rx).await;
         dbg!(finalized_block);
     }
 }

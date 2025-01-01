@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use tokio::sync::{mpsc, oneshot};
 use tonic_primitives::Signer;
 
@@ -33,6 +35,7 @@ where
         block_builder: BB,
         height: u64,
         signer: Signer,
+        base_round_time: Duration,
     ) -> Self {
         let messages = ConsensusMessages::new();
         Self {
@@ -49,6 +52,7 @@ where
                 block_verifier,
                 block_builder,
                 signer,
+                base_round_time,
             ),
         }
     }

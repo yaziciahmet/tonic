@@ -1,3 +1,4 @@
+use std::cmp;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,14 +18,7 @@ use crate::types::{
 use super::messages::ConsensusMessages;
 use super::types::View;
 
-const TIMEOUT_TABLE: [Duration; 6] = [
-    Duration::from_secs(4),
-    Duration::from_secs(8),
-    Duration::from_secs(16),
-    Duration::from_secs(32),
-    Duration::from_secs(64),
-    Duration::from_secs(128),
-];
+const TIMEOUT_MULTIPLIER: [u32; 12] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 #[derive(Clone)]
 pub struct IBFT<V, B, BV, BB>
@@ -40,6 +34,7 @@ where
     signer: Signer,
     block_verifier: BV,
     block_builder: BB,
+    base_round_time: Duration,
 }
 
 impl<V, B, BV, BB> IBFT<V, B, BV, BB>
@@ -56,6 +51,7 @@ where
         block_verifier: BV,
         block_builder: BB,
         signer: Signer,
+        base_round_time: Duration,
     ) -> Self {
         Self {
             messages,
@@ -64,6 +60,7 @@ where
             block_verifier,
             block_builder,
             signer,
+            base_round_time,
         }
     }
 
@@ -80,7 +77,7 @@ where
 
             let state = SharedRunState::new(view);
 
-            let timeout = tokio::time::sleep(get_round_timeout(view.round));
+            let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
             let (rcc_rx, rcc_task) = self.watch_rcc(view);
             let (round_finished, round_task) = self.start_ibft_round(state.clone());
@@ -341,14 +338,12 @@ where
 
         (rx, task)
     }
-}
 
-fn get_round_timeout(mut round: u32) -> Duration {
-    if round > 5 {
-        round = 5;
+    fn get_round_timeout(&self, round: u32) -> Duration {
+        let idx = cmp::min(round, TIMEOUT_MULTIPLIER.len() as u32 - 1);
+        self.base_round_time
+            .saturating_mul(TIMEOUT_MULTIPLIER[idx as usize])
     }
-
-    TIMEOUT_TABLE[round as usize]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
