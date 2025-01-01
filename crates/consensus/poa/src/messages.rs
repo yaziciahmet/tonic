@@ -1,5 +1,4 @@
 use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
-use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -10,7 +9,7 @@ use tonic_primitives::Address;
 use tracing::warn;
 
 use crate::backend::ValidatorManager;
-use crate::types::IBFTReceivedMessage;
+use crate::types::{CommitSeals, IBFTReceivedMessage};
 
 use super::types::{
     CommitMessageSigned, PrepareMessageSigned, ProposalMessageSigned, RoundChangeMessageSigned,
@@ -102,6 +101,10 @@ where
 
                 if !self.validator_manager.is_validator(sender, view.height) {
                     return Err(anyhow!("Message sender is not validator"));
+                }
+
+                if self.validator_manager.is_proposer(sender, view) {
+                    return Err(anyhow!("Proposer should not send prepare messages"));
                 }
 
                 self.messages.add_prepare_message(prepare, sender).await;
@@ -280,31 +283,47 @@ impl ConsensusMessages {
         }
     }
 
+    /// Subscribe to all newly incoming proposal messages.
     pub fn subscribe_proposal(&self) -> broadcast::Receiver<View> {
         self.proposal_tx.subscribe()
     }
 
+    /// Subscribe to all newly incoming prepare messages.
     pub fn subscribe_prepare(&self) -> broadcast::Receiver<View> {
         self.prepare_tx.subscribe()
     }
 
+    /// Subscribe to all newly incoming commit messages.
     pub fn subscribe_commit(&self) -> broadcast::Receiver<View> {
         self.commit_tx.subscribe()
     }
 
+    /// Subscribe to all newly incoming round change messages.
     pub fn subscribe_round_change(&self) -> broadcast::Receiver<View> {
         self.round_change_tx.subscribe()
     }
 
-    /// Tries to collect prepare messages that are verified (and pruned) by `verify_fn`.
-    /// Returns the collected prepare messages and 0 if quorum is reached, else, returns
-    /// None and required valid prepare message count.
-    pub async fn try_collect_valid_prepare_messages<F>(
+    /// Verifies the proposal message for the given view with the given verify_fn, and returns it's digest.
+    /// Returns `None` if proposal for the view doesn't exist.
+    pub async fn get_valid_proposal_digest<F, E>(
         &self,
         view: View,
         verify_fn: F,
-        quorum: usize,
-    ) -> (Option<Vec<PrepareMessageSigned>>, usize)
+    ) -> Option<Result<[u8; 32], E>>
+    where
+        F: Fn(&ProposalMessageSigned) -> Result<(), E>,
+    {
+        let mut proposal_messages = self.proposal_messages.lock().await;
+        match proposal_messages.view_entry(view) {
+            btree_map::Entry::Vacant(_) => None,
+            btree_map::Entry::Occupied(entry) => {
+                let proposal = entry.get();
+                Some(verify_fn(proposal).map(|_| proposal.proposed_block_digest()))
+            }
+        }
+    }
+
+    pub async fn get_valid_prepare_count<F>(&self, view: View, verify_fn: F) -> usize
     where
         F: Fn(&PrepareMessageSigned) -> bool,
     {
@@ -314,20 +333,15 @@ impl ConsensusMessages {
         // Prune invalid messages
         messages.retain(|_, prepare| verify_fn(prepare));
 
-        if messages.len() >= quorum {
-            let messages = mem::take(messages).into_values().collect::<Vec<_>>();
-            (Some(messages), 0)
-        } else {
-            (None, quorum - messages.len())
-        }
+        messages.len()
     }
 
-    pub async fn try_collect_valid_commit_messages<F>(
+    pub async fn get_valid_commit_seals<F>(
         &self,
         view: View,
         verify_fn: F,
         quorum: usize,
-    ) -> (Option<Vec<CommitMessageSigned>>, usize)
+    ) -> (Option<CommitSeals>, usize)
     where
         F: Fn(&CommitMessageSigned) -> bool,
     {
@@ -337,35 +351,14 @@ impl ConsensusMessages {
         // Prune invalid messages
         messages.retain(|_, commit| verify_fn(commit));
 
-        if messages.len() >= quorum {
-            let messages = mem::take(messages).into_values().collect::<Vec<_>>();
-            (Some(messages), 0)
+        let commit_seals = if messages.len() >= quorum {
+            Some(messages.iter().map(|(_, msg)| msg.commit_seal()).collect())
         } else {
-            (None, quorum - messages.len())
-        }
+            None
+        };
+
+        (commit_seals, messages.len())
     }
-
-    // pub async fn get_valid_round_change_messages<F>(
-    //     &self,
-    //     view: View,
-    //     verify_fn: F,
-    // ) -> Vec<Arc<RoundChangeMessageSigned>>
-    // where
-    //     F: Fn(&RoundChangeMessageSigned) -> bool,
-    // {
-    //     let mut round_change_messages = self.round_change_messages.lock().await;
-    //     let messages = round_change_messages.view_entry(view).or_default();
-
-    //     // Prune invalid messages
-    //     messages.retain(|_, round_change| verify_fn(round_change));
-
-    //     messages.values().cloned().collect()
-    // }
-
-    // pub async fn get_proposal_message(&self, view: View) -> Option<Arc<ProposalMessageSigned>> {
-    //     let proposal_messages = self.proposal_messages.lock().await;
-    //     proposal_messages.get_by_view(view).cloned()
-    // }
 
     pub async fn take_proposal_message(&self, view: View) -> Option<ProposalMessageSigned> {
         let mut proposal_messages = self.proposal_messages.lock().await;
@@ -418,11 +411,5 @@ impl<T> ViewMap<T> {
 
     fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u32, T> {
         self.0.entry(view.height).or_default().entry(view.round)
-    }
-
-    fn get_by_view(&self, view: View) -> Option<&T> {
-        self.0
-            .get(&view.height)
-            .and_then(|btree| btree.get(&view.round))
     }
 }

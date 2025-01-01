@@ -14,9 +14,3 @@ tracing = { workspace = true }
 [[bin]]
 name = "tonic"
 path = "src/main.rs"
-
-[profile.release]
-opt-level = 3
-debug = 1
-lto = true
-codegen-units = 1

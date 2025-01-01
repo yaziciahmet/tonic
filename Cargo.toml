@@ -47,3 +47,9 @@ thiserror = { version = "2", default-features = false }
 tokio = { version = "1.42", default-features = false, features = ["rt-multi-thread", "sync", "macros", "time"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = "0.3"
+
+[profile.release]
+opt-level = 3
+debug = 1
+lto = true
+codegen-units = 1

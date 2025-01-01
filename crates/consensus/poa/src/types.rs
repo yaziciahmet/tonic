@@ -374,14 +374,16 @@ impl PreparedCertificate {
     }
 }
 
+pub type CommitSeals = Vec<Signature>;
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct FinalizationProof {
     round: u32,
-    commit_seals: Vec<Signature>,
+    commit_seals: CommitSeals,
 }
 
 impl FinalizationProof {
-    pub fn new(round: u32, commit_seals: Vec<Signature>) -> Self {
+    pub fn new(round: u32, commit_seals: CommitSeals) -> Self {
         Self {
             round,
             commit_seals,
@@ -404,7 +406,7 @@ pub struct FinalizedBlock {
 }
 
 impl FinalizedBlock {
-    pub fn new(proposed_block: ProposedBlock, commit_seals: Vec<Signature>) -> Self {
+    pub fn new(proposed_block: ProposedBlock, commit_seals: CommitSeals) -> Self {
         Self {
             proof: FinalizationProof::new(proposed_block.round, commit_seals),
             raw_eth_block: proposed_block.raw_eth_block,
