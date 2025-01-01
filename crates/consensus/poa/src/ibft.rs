@@ -99,7 +99,7 @@ where
                     info!("Round timeout");
                     abort();
 
-                    self.handle_timeout(view, state.get().await).await;
+                    self.handle_timeout(view, state.get()).await;
                     view.round += 1;
                 }
                 _ = future_proposal_rx => {
@@ -153,7 +153,7 @@ where
 
         assert_eq!(view.round, 0, "Round must be 0");
         assert_eq!(
-            state.get().await,
+            state.get(),
             RunState::Proposal,
             "Initial run state must be Proposal"
         );
@@ -240,7 +240,7 @@ where
             }
         };
 
-        state.update(RunState::Prepare).await;
+        state.update(RunState::Prepare);
         debug!("Moved to prepare state");
 
         let quorum = self.validator_manager.quorum(view.height);
@@ -285,7 +285,7 @@ where
             .add_commit_message(commit, self.signer.address())
             .await;
 
-        state.update(RunState::Commit).await;
+        state.update(RunState::Commit);
         debug!("Moved to commit state");
 
         // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
@@ -389,11 +389,11 @@ impl SharedRunState {
         }
     }
 
-    async fn update(&self, new_state: RunState) {
+    fn update(&self, new_state: RunState) {
         self.run_state.store(new_state as u8, Ordering::SeqCst);
     }
 
-    async fn get(&self) -> RunState {
+    fn get(&self) -> RunState {
         RunState::from_u8(self.run_state.load(Ordering::SeqCst))
     }
 }
