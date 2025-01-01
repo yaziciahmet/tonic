@@ -201,6 +201,12 @@ pub struct ConsensusMessages {
     round_change_tx: broadcast::Sender<View>,
 }
 
+impl Default for ConsensusMessages {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConsensusMessages {
     pub fn new() -> Self {
         Self {
