@@ -141,6 +141,10 @@ where
                     return Ok(());
                 }
 
+                if view.round == 0 {
+                    return Err(anyhow!("Received round change with round 0"));
+                }
+
                 let sender = round_change.recover_signer()?;
                 if sender == self.address {
                     return Err(anyhow!("Received self signed message"));
