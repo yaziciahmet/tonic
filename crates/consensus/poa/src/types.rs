@@ -379,6 +379,17 @@ impl RoundChangeMessageSigned {
         self.message.view
     }
 
+    /// Updates the round of the round change message, and resigns the message.
+    pub fn update_and_resign(&mut self, round: u32, signer: &Signer) {
+        self.message.view.round = round;
+        let prehash = self.message.data_to_sign();
+        self.signature = signer.sign_prehash(prehash);
+    }
+
+    pub fn latest_prepared_proposed(&self) -> &Option<PreparedProposed> {
+        &self.message.latest_prepared_proposed
+    }
+
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         self.signature
             .recover_from_prehash(self.message.data_to_sign())
@@ -487,4 +498,10 @@ impl FinalizedBlock {
 pub struct View {
     pub height: u64,
     pub round: u32,
+}
+
+impl View {
+    pub fn new(height: u64, round: u32) -> Self {
+        Self { height, round }
+    }
 }

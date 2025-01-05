@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::select;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tonic_primitives::Signer;
 use tracing::{debug, error, info};
@@ -12,7 +12,8 @@ use tracing::{debug, error, info};
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTBroadcastMessage,
-    PrepareMessage, PrepareMessageSigned, ProposalMessage, ProposalMessageSigned,
+    PrepareMessage, PrepareMessageSigned, PreparedProposed, ProposalMessage, ProposalMessageSigned,
+    RoundChangeMessage, RoundChangeMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -69,13 +70,18 @@ where
         height: u64,
         mut cancel: oneshot::Receiver<()>,
     ) -> Option<FinalizedBlock> {
-        let mut view = View { height, round: 0 };
+        let quorum = self.validator_manager.quorum(height);
+        assert_ne!(quorum, 0, "Quorum must be greater than 0");
 
-        info!("Running consensus height {}", view.height);
+        info!("Running consensus height {}. quorum={}", height, quorum);
+
+        let mut round = 0;
+        let latest_certified_round_change = Arc::new(Mutex::new(None));
         loop {
-            info!("Running consensus round {}", view.round);
+            let view = View::new(height, round);
+            let state = SharedRunState::new(view, quorum);
 
-            let state = SharedRunState::new(view);
+            info!("Running consensus round {}", view.round);
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
@@ -95,21 +101,6 @@ where
                     abort();
                     return None;
                 }
-                _ = timeout => {
-                    info!("Round timeout");
-                    abort();
-
-                    self.handle_timeout(view, state.get()).await;
-                    view.round += 1;
-                }
-                _ = future_proposal_rx => {
-                    info!("Received future proposal");
-                    abort();
-                }
-                _ = rcc_rx => {
-                    info!("Got enough round change messages to create round change certificate");
-                    abort();
-                }
                 Ok(commit_seals) = round_finished => {
                     info!("Finished IBFT round");
                     abort();
@@ -121,6 +112,21 @@ where
                         .expect("Proposal must exist when round finished")
                         .into_proposed_block();
                     return Some(FinalizedBlock::new(proposed_block, commit_seals));
+                }
+                _ = future_proposal_rx => {
+                    info!("Received future proposal");
+                    abort();
+                }
+                _ = rcc_rx => {
+                    info!("Got enough round change messages to create round change certificate");
+                    abort();
+                }
+                _ = timeout => {
+                    info!("Round timeout");
+                    abort();
+
+                    self.handle_timeout(state, latest_certified_round_change.as_ref()).await;
+                    round += 1;
                 }
             }
         }
@@ -243,8 +249,7 @@ where
         state.update(RunState::Prepare);
         debug!("Moved to prepare state");
 
-        let quorum = self.validator_manager.quorum(view.height);
-        assert_ne!(quorum, 0, "Quorum must be greater than 0");
+        let quorum = state.quorum;
 
         // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
         // and querying by view also ensures height and round matches.
@@ -341,11 +346,74 @@ where
         (rx, task)
     }
 
-    async fn handle_timeout(&self, view: View, state: RunState) {
-        if state > RunState::Prepare {
-            // if last run got past prepare stage, we now have a new prepared proposed
-        } else {
-            // use the last known prepared proposed
+    async fn handle_timeout(
+        &self,
+        state: SharedRunState,
+        latest_certified_round_change: &Mutex<Option<RoundChangeMessageSigned>>,
+    ) {
+        let view = state.view;
+        let run_state = state.get();
+
+        match run_state {
+            // If commit, broadcast round change message with the newly created prepared proposed
+            RunState::Commit => {
+                let proposal = self
+                    .messages
+                    .take_proposal_message(view)
+                    .await
+                    .expect("Proposal must exist when past prepare state");
+                let verify_prepare_fn = |prepare: &PrepareMessageSigned| -> bool {
+                    prepare.proposed_block_digest() == proposal.proposed_block_digest()
+                };
+                let prepares = self
+                    .messages
+                    .take_valid_prepare_messages(view, verify_prepare_fn)
+                    .await;
+                assert!(
+                    prepares.len() >= state.quorum - 1,
+                    "Got {} prepares while prepare quorum is {} in timeout handler",
+                    prepares.len(),
+                    state.quorum - 1,
+                );
+
+                let prepared_proposed = PreparedProposed::new(proposal, prepares);
+
+                let round_change = RoundChangeMessage::new(
+                    View::new(view.height, view.round + 1),
+                    Some(prepared_proposed),
+                )
+                .into_signed(&self.signer);
+
+                self.broadcast
+                    .broadcast_message(IBFTBroadcastMessage::RoundChange(&round_change))
+                    .await;
+
+                *latest_certified_round_change.lock().await = Some(round_change);
+            }
+            // Else, broadcast round change message with either none or previously created prepared proposed
+            _ => match latest_certified_round_change.lock().await.as_mut() {
+                Some(round_change) => {
+                    assert!(
+                        round_change.latest_prepared_proposed().is_some(),
+                        "Latest certified round change exists but does not have prepared proposed"
+                    );
+
+                    round_change.update_and_resign(view.round + 1, &self.signer);
+
+                    self.broadcast
+                        .broadcast_message(IBFTBroadcastMessage::RoundChange(round_change))
+                        .await;
+                }
+                None => {
+                    let round_change =
+                        RoundChangeMessage::new(View::new(view.height, view.round + 1), None)
+                            .into_signed(&self.signer);
+
+                    self.broadcast
+                        .broadcast_message(IBFTBroadcastMessage::RoundChange(&round_change))
+                        .await;
+                }
+            },
         }
     }
 
@@ -378,13 +446,15 @@ impl RunState {
 #[derive(Debug, Clone)]
 struct SharedRunState {
     view: View,
+    quorum: usize,
     run_state: Arc<AtomicU8>,
 }
 
 impl SharedRunState {
-    fn new(view: View) -> Self {
+    fn new(view: View, quorum: usize) -> Self {
         Self {
             view,
+            quorum,
             run_state: Arc::new(AtomicU8::new(RunState::Proposal as u8)),
         }
     }

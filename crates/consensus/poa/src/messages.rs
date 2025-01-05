@@ -381,6 +381,27 @@ impl ConsensusMessages {
             btree_map::Entry::Occupied(entry) => Some(entry.remove()),
         }
     }
+
+    /// Takes valid prepare messages for the given view verified with the verify_fn.
+    pub async fn take_valid_prepare_messages<F>(
+        &self,
+        view: View,
+        verify_fn: F,
+    ) -> Vec<PrepareMessageSigned>
+    where
+        F: Fn(&PrepareMessageSigned) -> bool,
+    {
+        let mut prepare_messages = self.prepare_messages.lock().await;
+        let mut messages = match prepare_messages.view_entry(view) {
+            btree_map::Entry::Vacant(_) => return vec![],
+            btree_map::Entry::Occupied(entry) => entry.remove(),
+        };
+
+        // Prune invalid messages
+        messages.retain(|_, prepare| verify_fn(prepare));
+
+        messages.into_values().collect()
+    }
 }
 
 #[derive(Debug)]
