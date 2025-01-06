@@ -168,6 +168,7 @@ where
         let should_propose = self
             .validator_manager
             .is_proposer(self.signer.address(), view);
+
         let proposed_block_digest = if should_propose {
             info!("We are the block proposer");
 
