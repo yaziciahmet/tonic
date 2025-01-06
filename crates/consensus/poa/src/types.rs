@@ -323,6 +323,14 @@ impl PreparedProposed {
             prepared_certificate: PreparedCertificate::new(proposal_meta, prepares),
         }
     }
+
+    pub fn proposed_block(&self) -> &ProposedBlock {
+        &self.proposed_block
+    }
+
+    pub fn prepared_certificate(&self) -> &PreparedCertificate {
+        &self.prepared_certificate
+    }
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -422,10 +430,8 @@ impl ProposedBlock {
     pub fn round(&self) -> u32 {
         self.round
     }
-}
 
-impl ProposedBlock {
-    fn digest(&self) -> [u8; 32] {
+    pub fn digest(&self) -> [u8; 32] {
         let data = codec::serialize(self);
         sha256(&data)
     }
@@ -443,6 +449,14 @@ impl PreparedCertificate {
             proposal_meta,
             prepare_messages: prepares,
         }
+    }
+
+    pub fn proposal(&self) -> &ProposalMetadata {
+        &self.proposal_meta
+    }
+
+    pub fn prepare_messages(&self) -> &[PrepareMessageSigned] {
+        &self.prepare_messages
     }
 }
 

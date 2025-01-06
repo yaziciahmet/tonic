@@ -1,4 +1,5 @@
 use std::cmp;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -415,6 +416,71 @@ where
                 }
             },
         }
+    }
+
+    /// Verify a `PreparedProposal` except the raw block in the proposed block
+    fn verify_prepared_proposed(
+        &self,
+        prepared_proposed: &PreparedProposed,
+        height: u64,
+        round_limit: u32,
+    ) -> bool {
+        let prepared_certificate = prepared_proposed.prepared_certificate();
+
+        let proposal = prepared_certificate.proposal();
+        let proposal_view = proposal.view();
+        if proposal_view.height != height || proposal_view.round >= round_limit {
+            return false;
+        }
+        let Ok(proposer) = proposal.recover_signer() else {
+            return false;
+        };
+        if !self.validator_manager.is_proposer(proposer, proposal_view) {
+            return false;
+        }
+
+        let proposed_block = prepared_proposed.proposed_block();
+        let proposed_block_digest = proposed_block.digest();
+        if proposal.proposed_block_digest() != proposed_block_digest {
+            return false;
+        }
+
+        let prepares = prepared_certificate.prepare_messages();
+        let quorum = self.validator_manager.quorum(height);
+        if prepares.len() < quorum - 1 {
+            return false;
+        }
+
+        let mut seen_validators = HashSet::with_capacity(prepares.len());
+        for prepare in prepares {
+            let prepare_view = prepare.view();
+            if prepare_view.height != proposal_view.height
+                || prepare_view.round != proposal_view.round
+            {
+                return false;
+            }
+            let Ok(sender) = prepare.recover_signer() else {
+                return false;
+            };
+            if sender == proposer
+                || !self
+                    .validator_manager
+                    .is_validator(sender, prepare_view.height)
+            {
+                return false;
+            }
+            if prepare.proposed_block_digest() != proposed_block_digest {
+                return false;
+            }
+
+            let inserted = seen_validators.insert(sender);
+            if !inserted {
+                // Duplicate validator
+                return false;
+            }
+        }
+
+        true
     }
 
     fn get_round_timeout(&self, round: u32) -> Duration {
