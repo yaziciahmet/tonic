@@ -77,6 +77,7 @@ where
         info!("Running consensus height {}. quorum={}", height, quorum);
 
         let mut round = 0;
+        // This will be used for tracking the latest prepared proposed of the height
         let latest_certified_round_change = Arc::new(Mutex::new(None));
         loop {
             let view = View::new(height, round);
@@ -345,6 +346,7 @@ where
             .is_proposer(self.signer.address(), view);
 
         let proposed_block_digest = if should_propose {
+            let _rcc = self.wait_for_rcc(view, latest_certified_round_change).await;
             todo!()
         } else {
             let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
@@ -469,6 +471,12 @@ where
 
         todo!()
     }
+
+    async fn wait_for_rcc(
+        &self,
+        view: View,
+        latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
+    ) {}
 
     fn watch_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
