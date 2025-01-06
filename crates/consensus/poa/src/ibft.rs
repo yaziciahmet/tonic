@@ -13,8 +13,8 @@ use tracing::{debug, error, info};
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTBroadcastMessage,
-    PrepareMessage, PrepareMessageSigned, PreparedProposed, ProposalMessage, ProposalMessageSigned,
-    RoundChangeMessage, RoundChangeMessageSigned,
+    PrepareMessage, PrepareMessageSigned, PreparedCertificate, PreparedProposed, ProposalMessage,
+    ProposalMessageSigned, RoundChangeMessage, RoundChangeMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -418,15 +418,13 @@ where
         }
     }
 
-    /// Verify a `PreparedProposal` except the raw block in the proposed block
-    fn verify_prepared_proposed(
+    fn verify_prepared_certificate(
         &self,
-        prepared_proposed: &PreparedProposed,
+        prepared_certificate: &PreparedCertificate,
         height: u64,
         round_limit: u32,
+        proposed_block_digest: [u8; 32],
     ) -> bool {
-        let prepared_certificate = prepared_proposed.prepared_certificate();
-
         let proposal = prepared_certificate.proposal();
         let proposal_view = proposal.view();
         if proposal_view.height != height || proposal_view.round >= round_limit {
@@ -438,9 +436,6 @@ where
         if !self.validator_manager.is_proposer(proposer, proposal_view) {
             return false;
         }
-
-        let proposed_block = prepared_proposed.proposed_block();
-        let proposed_block_digest = proposed_block.digest();
         if proposal.proposed_block_digest() != proposed_block_digest {
             return false;
         }
