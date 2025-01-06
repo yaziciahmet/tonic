@@ -454,13 +454,13 @@ where
             {
                 return false;
             }
-            let Ok(sender) = prepare.recover_signer() else {
+            let Ok(validator) = prepare.recover_signer() else {
                 return false;
             };
-            if sender == proposer
+            if validator == proposer
                 || !self
                     .validator_manager
-                    .is_validator(sender, prepare_view.height)
+                    .is_validator(validator, prepare_view.height)
             {
                 return false;
             }
@@ -468,7 +468,7 @@ where
                 return false;
             }
 
-            let inserted = seen_validators.insert(sender);
+            let inserted = seen_validators.insert(validator);
             if !inserted {
                 // Duplicate validator
                 return false;
