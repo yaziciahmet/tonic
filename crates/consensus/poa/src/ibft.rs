@@ -430,13 +430,13 @@ where
         if proposal_view.height != height || proposal_view.round >= round_limit {
             return false;
         }
+        if proposal.proposed_block_digest() != proposed_block_digest {
+            return false;
+        }
         let Ok(proposer) = proposal.recover_signer() else {
             return false;
         };
         if !self.validator_manager.is_proposer(proposer, proposal_view) {
-            return false;
-        }
-        if proposal.proposed_block_digest() != proposed_block_digest {
             return false;
         }
 
@@ -454,6 +454,9 @@ where
             {
                 return false;
             }
+            if prepare.proposed_block_digest() != proposed_block_digest {
+                return false;
+            }
             let Ok(validator) = prepare.recover_signer() else {
                 return false;
             };
@@ -462,9 +465,6 @@ where
                     .validator_manager
                     .is_validator(validator, prepare_view.height)
             {
-                return false;
-            }
-            if prepare.proposed_block_digest() != proposed_block_digest {
                 return false;
             }
 
