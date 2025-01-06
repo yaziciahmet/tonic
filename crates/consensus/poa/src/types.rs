@@ -405,8 +405,49 @@ impl RoundChangeMessageSigned {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct RoundChangeMetadata {
+    view: View,
+    latest_prepared_certificate: Option<PreparedCertificate>,
+    signature: Signature,
+}
+
+impl RoundChangeMetadata {
+    pub fn from_message(message: RoundChangeMessageSigned) -> Self {
+        Self {
+            view: message.view(),
+            latest_prepared_certificate: message
+                .message
+                .latest_prepared_proposed
+                .map(|p| p.prepared_certificate),
+            signature: message.signature,
+        }
+    }
+
+    pub fn ty(&self) -> MessageType {
+        MessageType::RoundChange
+    }
+
+    pub fn view(&self) -> View {
+        self.view
+    }
+
+    pub fn latest_prepared_certificate(&self) -> &Option<PreparedCertificate> {
+        &self.latest_prepared_certificate
+    }
+
+    fn data_to_sign(&self) -> [u8; 32] {
+        let bytes = codec::serialize(&(self.ty(), self.view, &self.latest_prepared_certificate));
+        sha256(&bytes)
+    }
+
+    pub fn recover_signer(&self) -> anyhow::Result<Address> {
+        self.signature.recover_from_prehash(self.data_to_sign())
+    }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct RoundChangeCertificate {
-    pub round_change_messages: Vec<RoundChangeMessageSigned>,
+    round_change_messages: Vec<RoundChangeMetadata>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
