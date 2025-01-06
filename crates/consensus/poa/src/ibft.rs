@@ -14,7 +14,7 @@ use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTBroadcastMessage,
     PrepareMessage, PrepareMessageSigned, PreparedCertificate, PreparedProposed, ProposalMessage,
-    ProposalMessageSigned, RoundChangeMessage, RoundChangeMessageSigned,
+    ProposalMessageSigned, ProposedBlock, RoundChangeMessage, RoundChangeMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -172,14 +172,13 @@ where
         let proposed_block_digest = if should_propose {
             info!("We are the block proposer");
 
-            let raw_eth_block = self
+            let raw_block = self
                 .block_builder
                 .build_block(view.height)
                 .map_err(IBFTError::BlockBuild)?;
             debug!("Built the proposal block");
 
-            let proposal =
-                ProposalMessage::new(view, raw_eth_block, None).into_signed(&self.signer);
+            let proposal = ProposalMessage::new(view, raw_block, None).into_signed(&self.signer);
             let proposed_block_digest = proposal.proposed_block_digest();
 
             self.broadcast
@@ -197,7 +196,7 @@ where
 
                 if let Err(err) = self
                     .block_verifier
-                    .verify_block(proposal.proposed_block().raw_eth_block())
+                    .verify_block(proposal.proposed_block().raw_block())
                 {
                     return Err(IBFTError::InvalidProposalBlock(err));
                 }
@@ -326,6 +325,151 @@ where
         Ok(commit_seals.expect("Must have value when reached quorum"))
     }
 
+    async fn run_ibft_round(
+        &self,
+        state: SharedRunState,
+        latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
+    ) -> Result<CommitSeals, IBFTError> {
+        let view = state.view;
+        let quorum = self.validator_manager.quorum(view.height);
+
+        assert_ne!(view.round, 0, "Round must be greater than 0");
+        assert_eq!(
+            state.get(),
+            RunState::Proposal,
+            "Initial run state must be Proposal"
+        );
+
+        let should_propose = self
+            .validator_manager
+            .is_proposer(self.signer.address(), view);
+
+        let proposed_block_digest = if should_propose {
+            todo!()
+        } else {
+            let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
+                if !proposal.verify_digest() {
+                    return Err(IBFTError::IncorrectProposalDigest);
+                }
+
+                let Some(rcc) = proposal.round_change_certificate() else {
+                    return Err(IBFTError::MissingRoundChangeCertificate);
+                };
+                let round_changes = rcc.round_change_messages.as_slice();
+
+                if round_changes.len() < quorum {
+                    return Err(IBFTError::RoundChangeCertificateQuorumNotReached);
+                }
+
+                let proposal_view = proposal.view();
+
+                let mut highest_round = 0;
+                let mut highest_round_pc: Option<&PreparedCertificate> = None;
+                let mut seen_validators = HashSet::with_capacity(round_changes.len());
+                for round_change in round_changes {
+                    if round_change.view() != proposal_view {
+                        return Err(IBFTError::InvalidRoundChangeInCertificate);
+                    }
+
+                    let Ok(validator) = round_change.recover_signer() else {
+                        return Err(IBFTError::InvalidRoundChangeInCertificate);
+                    };
+                    if !self
+                        .validator_manager
+                        .is_validator(validator, proposal_view.height)
+                    {
+                        return Err(IBFTError::InvalidRoundChangeInCertificate);
+                    }
+
+                    let inserted = seen_validators.insert(validator);
+                    if !inserted {
+                        return Err(IBFTError::DuplicateRoundChangeInCertificate);
+                    }
+
+                    if let Some(pc) = round_change.latest_prepared_certificate() {
+                        let pc_round = pc.proposal().view().round;
+                        if pc_round > highest_round {
+                            highest_round = pc_round;
+                            highest_round_pc = Some(pc);
+                        }
+                    }
+                }
+
+                let proposed_block = proposal.proposed_block();
+
+                if let Some(pc) = highest_round_pc {
+                    // Proposed block must correspond to the highest round prepared certificate
+                    // within the round change messages
+                    let expected_digest =
+                        ProposedBlock::digest_raw(proposed_block.raw_block(), highest_round);
+                    if expected_digest != pc.proposal().proposed_block_digest() {
+                        return Err(IBFTError::InvalidRoundChangeInCertificate);
+                    }
+
+                    if !self.verify_prepared_certificate(
+                        pc,
+                        proposal_view.height,
+                        proposal_view.round,
+                    ) {
+                        return Err(IBFTError::InvalidRoundChangeInCertificate);
+                    }
+                } else {
+                    // There are no prepared certificates in any of the round change messages.
+                    // Verify the newly proposed block.
+                    if let Err(err) = self.block_verifier.verify_block(proposed_block.raw_block()) {
+                        return Err(IBFTError::InvalidProposalBlock(err));
+                    }
+                }
+
+                Ok(())
+            };
+
+            // First subscribe so we don't miss the notification in the brief time we query the proposal.
+            let mut proposal_rx = self.messages.subscribe_proposal();
+            if let Some(digest) = self
+                .messages
+                .get_valid_proposal_digest(view, proposal_verify_fn)
+                .await
+            {
+                digest?
+            } else {
+                // Wait until we receive a proposal from peers for the given view
+                loop {
+                    let proposal_view = proposal_rx
+                        .recv()
+                        .await
+                        .expect("Proposal subscriber channel should not close");
+                    if proposal_view == view {
+                        break;
+                    }
+                }
+
+                let digest = self
+                    .messages
+                    .get_valid_proposal_digest(view, proposal_verify_fn)
+                    .await
+                    .expect(
+                        "At this state, nothing else should be pruning or taking the proposal",
+                    )?;
+                debug!("Received valid proposal message");
+
+                let prepare = PrepareMessage::new(view, digest).into_signed(&self.signer);
+
+                self.broadcast
+                    .broadcast_message(IBFTBroadcastMessage::Prepare(&prepare))
+                    .await;
+
+                self.messages
+                    .add_prepare_message(prepare, self.signer.address())
+                    .await;
+
+                digest
+            }
+        };
+
+        todo!()
+    }
+
     fn watch_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
@@ -424,14 +568,10 @@ where
         prepared_certificate: &PreparedCertificate,
         height: u64,
         round_limit: u32,
-        proposed_block_digest: [u8; 32],
     ) -> bool {
         let proposal = prepared_certificate.proposal();
         let proposal_view = proposal.view();
         if proposal_view.height != height || proposal_view.round >= round_limit {
-            return false;
-        }
-        if proposal.proposed_block_digest() != proposed_block_digest {
             return false;
         }
         let Ok(proposer) = proposal.recover_signer() else {
@@ -447,12 +587,10 @@ where
             return false;
         }
 
+        let proposed_block_digest = proposal.proposed_block_digest();
         let mut seen_validators = HashSet::with_capacity(prepares.len());
         for prepare in prepares {
-            let prepare_view = prepare.view();
-            if prepare_view.height != proposal_view.height
-                || prepare_view.round != proposal_view.round
-            {
+            if proposal_view != prepare.view() {
                 return false;
             }
             if prepare.proposed_block_digest() != proposed_block_digest {
@@ -464,7 +602,7 @@ where
             if validator == proposer
                 || !self
                     .validator_manager
-                    .is_validator(validator, prepare_view.height)
+                    .is_validator(validator, proposal_view.height)
             {
                 return false;
             }
@@ -538,4 +676,14 @@ enum IBFTError {
     InvalidProposalBlock(anyhow::Error),
     #[error("Block builder failed: {0}")]
     BlockBuild(anyhow::Error),
+    #[error("Missing round change certificate in proposal")]
+    MissingRoundChangeCertificate,
+    #[error("Round change certificate does not contain quorum number of messages")]
+    RoundChangeCertificateQuorumNotReached,
+    #[error("Invalid round change message in the proposal certificate")]
+    InvalidRoundChangeInCertificate,
+    #[error("Duplicate round change message in certificate")]
+    DuplicateRoundChangeInCertificate,
+    #[error("Proposed block's round does not match the round change certificate's highest round")]
+    ProposedBlockAndCertificateRoundMismatch,
 }

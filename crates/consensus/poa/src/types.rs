@@ -41,11 +41,11 @@ pub struct ProposalMessage {
 impl ProposalMessage {
     pub fn new(
         view: View,
-        raw_eth_block: Vec<u8>,
+        raw_block: Vec<u8>,
         round_change_certificate: Option<RoundChangeCertificate>,
     ) -> Self {
         let proposed_block = ProposedBlock {
-            raw_eth_block,
+            raw_block,
             round: view.round,
         };
         Self {
@@ -112,6 +112,10 @@ impl ProposalMessageSigned {
 
     pub fn proposed_block_digest(&self) -> [u8; 32] {
         self.message.proposed_block_digest
+    }
+
+    pub fn round_change_certificate(&self) -> &Option<RoundChangeCertificate> {
+        &self.message.round_change_certificate
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
@@ -447,25 +451,22 @@ impl RoundChangeMetadata {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct RoundChangeCertificate {
-    round_change_messages: Vec<RoundChangeMetadata>,
+    pub round_change_messages: Vec<RoundChangeMetadata>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedBlock {
-    raw_eth_block: Vec<u8>,
+    raw_block: Vec<u8>,
     round: u32,
 }
 
 impl ProposedBlock {
-    pub fn new(raw_eth_block: Vec<u8>, round: u32) -> Self {
-        Self {
-            raw_eth_block,
-            round,
-        }
+    pub fn new(raw_block: Vec<u8>, round: u32) -> Self {
+        Self { raw_block, round }
     }
 
-    pub fn raw_eth_block(&self) -> &[u8] {
-        &self.raw_eth_block
+    pub fn raw_block(&self) -> &[u8] {
+        &self.raw_block
     }
 
     pub fn round(&self) -> u32 {
@@ -473,7 +474,11 @@ impl ProposedBlock {
     }
 
     pub fn digest(&self) -> [u8; 32] {
-        let data = codec::serialize(self);
+        Self::digest_raw(&self.raw_block, self.round)
+    }
+
+    pub fn digest_raw(raw_block: &[u8], round: u32) -> [u8; 32] {
+        let data = codec::serialize(&(raw_block, round));
         sha256(&data)
     }
 }
@@ -528,7 +533,7 @@ impl FinalizationProof {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct FinalizedBlock {
-    raw_eth_block: Vec<u8>,
+    raw_block: Vec<u8>,
     proof: FinalizationProof,
 }
 
@@ -536,12 +541,12 @@ impl FinalizedBlock {
     pub fn new(proposed_block: ProposedBlock, commit_seals: CommitSeals) -> Self {
         Self {
             proof: FinalizationProof::new(proposed_block.round, commit_seals),
-            raw_eth_block: proposed_block.raw_eth_block,
+            raw_block: proposed_block.raw_block,
         }
     }
 
-    pub fn raw_eth_block(&self) -> &[u8] {
-        &self.raw_eth_block
+    pub fn raw_block(&self) -> &[u8] {
+        &self.raw_block
     }
 
     pub fn proof(&self) -> &FinalizationProof {

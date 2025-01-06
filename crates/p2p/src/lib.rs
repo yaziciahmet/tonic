@@ -94,7 +94,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(received_block.raw_eth_block(), vec![1, 2, 3]);
+        assert_eq!(received_block.raw_block(), vec![1, 2, 3]);
         assert_eq!(received_block.proof().round(), 0);
 
         // Ensure that Node1 didn't receive its own message
@@ -110,7 +110,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(received_block.raw_eth_block(), vec![4, 5, 6]);
+        assert_eq!(received_block.raw_block(), vec![4, 5, 6]);
         assert_eq!(received_block.proof().round(), 0);
 
         // Ensure that Node2 didn't receive its own message
