@@ -483,12 +483,22 @@ impl View {
 }
 
 pub fn digest_proposal(view: &View, proposed_block_digest: &[u8; 32]) -> [u8; 32] {
-    let bytes = codec::serialize(&(MessageType::Proposal, view, proposed_block_digest));
+    const PROPOSAL_SIZE: usize = 1 + 12 + 32;
+    let mut bytes = [0; PROPOSAL_SIZE];
+    codec::serialize_to(
+        &(MessageType::Proposal, view, proposed_block_digest),
+        &mut bytes,
+    );
     sha256(&bytes)
 }
 
 pub fn digest_prepare(view: &View, proposed_block_digest: &[u8; 32]) -> [u8; 32] {
-    let bytes = codec::serialize(&(MessageType::Prepare, view, proposed_block_digest));
+    const PREPARE_SIZE: usize = 1 + 12 + 32;
+    let mut bytes = [0; PREPARE_SIZE];
+    codec::serialize_to(
+        &(MessageType::Prepare, view, proposed_block_digest),
+        &mut bytes,
+    );
     sha256(&bytes)
 }
 
@@ -497,12 +507,17 @@ pub fn digest_commit(
     proposed_block_digest: &[u8; 32],
     commit_seal: &Signature,
 ) -> [u8; 32] {
-    let bytes = codec::serialize(&(
-        MessageType::Commit,
-        view,
-        proposed_block_digest,
-        commit_seal,
-    ));
+    const COMMIT_SIZE: usize = 1 + 12 + 32 + 65;
+    let mut bytes = [0; COMMIT_SIZE];
+    codec::serialize_to(
+        &(
+            MessageType::Commit,
+            view,
+            proposed_block_digest,
+            commit_seal,
+        ),
+        &mut bytes,
+    );
     sha256(&bytes)
 }
 
