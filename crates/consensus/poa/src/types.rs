@@ -56,29 +56,12 @@ impl ProposalMessage {
         }
     }
 
-    pub fn ty(&self) -> MessageType {
-        MessageType::Proposal
-    }
-
-    pub fn view(&self) -> View {
-        self.view
-    }
-
-    pub fn proposed_block(&self) -> &ProposedBlock {
-        &self.proposed_block
-    }
-
-    pub fn proposed_block_digest(&self) -> [u8; 32] {
-        self.proposed_block_digest
-    }
-
-    fn data_to_sign(&self) -> [u8; 32] {
-        let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
-        sha256(&bytes)
+    pub fn digest(&self) -> [u8; 32] {
+        digest_proposal(&self.view, &self.proposed_block_digest)
     }
 
     pub fn into_signed(self, signer: &Signer) -> ProposalMessageSigned {
-        let prehash = self.data_to_sign();
+        let prehash = self.digest();
         let signature = signer.sign_prehash(prehash);
         ProposalMessageSigned {
             message: self,
@@ -86,7 +69,7 @@ impl ProposalMessage {
         }
     }
 
-    pub fn verify_digest(&self) -> bool {
+    pub fn verify_block_digest(&self) -> bool {
         self.proposed_block.digest() == self.proposed_block_digest
     }
 }
@@ -114,17 +97,16 @@ impl ProposalMessageSigned {
         self.message.proposed_block_digest
     }
 
-    pub fn round_change_certificate(&self) -> &Option<RoundChangeCertificate> {
-        &self.message.round_change_certificate
+    pub fn round_change_certificate(&self) -> Option<&RoundChangeCertificate> {
+        self.message.round_change_certificate.as_ref()
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        self.signature
-            .recover_from_prehash(self.message.data_to_sign())
+        self.signature.recover_from_prehash(self.message.digest())
     }
 
-    pub fn verify_digest(&self) -> bool {
-        self.message.verify_digest()
+    pub fn verify_block_digest(&self) -> bool {
+        self.message.verify_block_digest()
     }
 }
 
@@ -136,10 +118,6 @@ pub struct ProposalMetadata {
 }
 
 impl ProposalMetadata {
-    pub fn ty(&self) -> MessageType {
-        MessageType::Proposal
-    }
-
     pub fn view(&self) -> View {
         self.view
     }
@@ -148,13 +126,9 @@ impl ProposalMetadata {
         self.proposed_block_digest
     }
 
-    fn data_to_sign(&self) -> [u8; 32] {
-        let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
-        sha256(&bytes)
-    }
-
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        self.signature.recover_from_prehash(self.data_to_sign())
+        self.signature
+            .recover_from_prehash(digest_proposal(&self.view, &self.proposed_block_digest))
     }
 }
 
@@ -172,25 +146,12 @@ impl PrepareMessage {
         }
     }
 
-    pub fn ty(&self) -> MessageType {
-        MessageType::Prepare
-    }
-
-    pub fn view(&self) -> View {
-        self.view
-    }
-
-    pub fn proposed_block_digest(&self) -> [u8; 32] {
-        self.proposed_block_digest
-    }
-
-    fn data_to_sign(&self) -> [u8; 32] {
-        let bytes = codec::serialize(&(self.ty(), self.view, self.proposed_block_digest));
-        sha256(&bytes)
+    fn digest(&self) -> [u8; 32] {
+        digest_prepare(&self.view, &self.proposed_block_digest)
     }
 
     pub fn into_signed(self, signer: &Signer) -> PrepareMessageSigned {
-        let prehash = self.data_to_sign();
+        let prehash = self.digest();
         let signature = signer.sign_prehash(prehash);
         PrepareMessageSigned {
             message: self,
@@ -215,8 +176,7 @@ impl PrepareMessageSigned {
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        self.signature
-            .recover_from_prehash(self.message.data_to_sign())
+        self.signature.recover_from_prehash(self.message.digest())
     }
 }
 
@@ -237,39 +197,17 @@ impl CommitMessage {
         }
     }
 
-    pub fn ty(&self) -> MessageType {
-        MessageType::Commit
-    }
-
-    pub fn view(&self) -> View {
-        self.view
-    }
-
-    pub fn proposed_block_digest(&self) -> [u8; 32] {
-        self.proposed_block_digest
-    }
-
-    pub fn commit_seal(&self) -> Signature {
-        self.commit_seal
-    }
-
     pub fn recover_commit_seal_signer(&self) -> anyhow::Result<Address> {
         self.commit_seal
             .recover_from_prehash(self.proposed_block_digest)
     }
 
-    fn data_to_sign(&self) -> [u8; 32] {
-        let bytes = codec::serialize(&(
-            self.ty(),
-            self.view,
-            self.proposed_block_digest,
-            self.commit_seal,
-        ));
-        sha256(&bytes)
+    fn digest(&self) -> [u8; 32] {
+        digest_commit(&self.view, &self.proposed_block_digest, &self.commit_seal)
     }
 
     pub fn into_signed(self, signer: &Signer) -> CommitMessageSigned {
-        let prehash = self.data_to_sign();
+        let prehash = self.digest();
         let signature = signer.sign_prehash(prehash);
         CommitMessageSigned {
             message: self,
@@ -302,8 +240,7 @@ impl CommitMessageSigned {
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        self.signature
-            .recover_from_prehash(self.message.data_to_sign())
+        self.signature.recover_from_prehash(self.message.digest())
     }
 }
 
@@ -351,27 +288,17 @@ impl RoundChangeMessage {
         }
     }
 
-    pub fn ty(&self) -> MessageType {
-        MessageType::RoundChange
-    }
-
-    pub fn view(&self) -> View {
-        self.view
-    }
-
-    fn data_to_sign(&self) -> [u8; 32] {
-        let bytes = codec::serialize(&(
-            self.ty(),
-            self.view,
+    fn digest(&self) -> [u8; 32] {
+        digest_round_change(
+            &self.view,
             self.latest_prepared_proposed
                 .as_ref()
                 .map(|p| &p.prepared_certificate),
-        ));
-        sha256(&bytes)
+        )
     }
 
     pub fn into_signed(self, signer: &Signer) -> RoundChangeMessageSigned {
-        let prehash = self.data_to_sign();
+        let prehash = self.digest();
         let signature = signer.sign_prehash(prehash);
         RoundChangeMessageSigned {
             message: self,
@@ -394,7 +321,7 @@ impl RoundChangeMessageSigned {
     /// Updates the round of the round change message, and resigns the message.
     pub fn update_and_resign(&mut self, round: u32, signer: &Signer) {
         self.message.view.round = round;
-        let prehash = self.message.data_to_sign();
+        let prehash = self.message.digest();
         self.signature = signer.sign_prehash(prehash);
     }
 
@@ -403,8 +330,7 @@ impl RoundChangeMessageSigned {
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        self.signature
-            .recover_from_prehash(self.message.data_to_sign())
+        self.signature.recover_from_prehash(self.message.digest())
     }
 }
 
@@ -427,10 +353,6 @@ impl RoundChangeMetadata {
         }
     }
 
-    pub fn ty(&self) -> MessageType {
-        MessageType::RoundChange
-    }
-
     pub fn view(&self) -> View {
         self.view
     }
@@ -439,13 +361,12 @@ impl RoundChangeMetadata {
         &self.latest_prepared_certificate
     }
 
-    fn data_to_sign(&self) -> [u8; 32] {
-        let bytes = codec::serialize(&(self.ty(), self.view, &self.latest_prepared_certificate));
-        sha256(&bytes)
+    fn digest(&self) -> [u8; 32] {
+        digest_round_change(&self.view, self.latest_prepared_certificate.as_ref())
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
-        self.signature.recover_from_prehash(self.data_to_sign())
+        self.signature.recover_from_prehash(self.digest())
     }
 }
 
@@ -474,12 +395,7 @@ impl ProposedBlock {
     }
 
     pub fn digest(&self) -> [u8; 32] {
-        Self::digest_raw(&self.raw_block, self.round)
-    }
-
-    pub fn digest_raw(raw_block: &[u8], round: u32) -> [u8; 32] {
-        let data = codec::serialize(&(raw_block, round));
-        sha256(&data)
+        digest_block(&self.raw_block, self.round)
     }
 }
 
@@ -564,4 +480,41 @@ impl View {
     pub fn new(height: u64, round: u32) -> Self {
         Self { height, round }
     }
+}
+
+pub fn digest_proposal(view: &View, proposed_block_digest: &[u8; 32]) -> [u8; 32] {
+    let bytes = codec::serialize(&(MessageType::Proposal, view, proposed_block_digest));
+    sha256(&bytes)
+}
+
+pub fn digest_prepare(view: &View, proposed_block_digest: &[u8; 32]) -> [u8; 32] {
+    let bytes = codec::serialize(&(MessageType::Prepare, view, proposed_block_digest));
+    sha256(&bytes)
+}
+
+pub fn digest_commit(
+    view: &View,
+    proposed_block_digest: &[u8; 32],
+    commit_seal: &Signature,
+) -> [u8; 32] {
+    let bytes = codec::serialize(&(
+        MessageType::Commit,
+        view,
+        proposed_block_digest,
+        commit_seal,
+    ));
+    sha256(&bytes)
+}
+
+pub fn digest_round_change(
+    view: &View,
+    latest_prepared_certificate: Option<&PreparedCertificate>,
+) -> [u8; 32] {
+    let bytes = codec::serialize(&(MessageType::RoundChange, view, latest_prepared_certificate));
+    sha256(&bytes)
+}
+
+pub fn digest_block(raw_block: &[u8], round: u32) -> [u8; 32] {
+    let data = codec::serialize(&(raw_block, round));
+    sha256(&data)
 }

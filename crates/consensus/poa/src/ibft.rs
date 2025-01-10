@@ -12,9 +12,10 @@ use tracing::{debug, error, info};
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
-    CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock, IBFTBroadcastMessage,
-    PrepareMessage, PrepareMessageSigned, PreparedCertificate, PreparedProposed, ProposalMessage,
-    ProposalMessageSigned, ProposedBlock, RoundChangeMessage, RoundChangeMessageSigned,
+    digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
+    IBFTBroadcastMessage, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
+    PreparedProposed, ProposalMessage, ProposalMessageSigned, ProposedBlock, RoundChangeMessage,
+    RoundChangeMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -191,7 +192,7 @@ where
             proposed_block_digest
         } else {
             let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
-                if !proposal.verify_digest() {
+                if !proposal.verify_block_digest() {
                     return Err(IBFTError::IncorrectProposalDigest);
                 }
 
@@ -350,7 +351,7 @@ where
             todo!()
         } else {
             let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
-                if !proposal.verify_digest() {
+                if !proposal.verify_block_digest() {
                     return Err(IBFTError::IncorrectProposalDigest);
                 }
 
@@ -402,8 +403,7 @@ where
                 if let Some(pc) = highest_round_pc {
                     // Proposed block must correspond to the highest round prepared certificate
                     // within the round change messages
-                    let expected_digest =
-                        ProposedBlock::digest_raw(proposed_block.raw_block(), highest_round);
+                    let expected_digest = digest_block(proposed_block.raw_block(), highest_round);
                     if expected_digest != pc.proposal().proposed_block_digest() {
                         return Err(IBFTError::InvalidRoundChangeInCertificate);
                     }
