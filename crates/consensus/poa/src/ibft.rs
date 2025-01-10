@@ -476,7 +476,8 @@ where
         &self,
         view: View,
         latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
-    ) {}
+    ) {
+    }
 
     fn watch_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
