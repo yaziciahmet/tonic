@@ -186,7 +186,7 @@ where
         latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
     ) -> Result<CommitSeals, IBFTError> {
         let view = state.view;
-        let quorum = self.validator_manager.quorum(view.height);
+        let quorum = state.quorum;
 
         assert_ne!(view.round, 0, "Round must be greater than 0");
         assert_eq!(
