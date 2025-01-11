@@ -14,7 +14,7 @@ use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
     IBFTBroadcastMessage, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
-    PreparedProposed, ProposalMessage, ProposalMessageSigned, ProposedBlock, RoundChangeMessage,
+    PreparedProposed, ProposalMessage, ProposalMessageSigned, RoundChangeMessage,
     RoundChangeMessageSigned,
 };
 
