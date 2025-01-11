@@ -79,7 +79,7 @@ where
 
         let mut round = 0;
         // This will be used for tracking the latest prepared proposed of the height
-        let latest_certified_round_change = Arc::new(Mutex::new(None));
+        let mut latest_self_round_change = None;
         loop {
             let view = View::new(height, round);
             let state = SharedRunState::new(view, quorum);
@@ -128,7 +128,7 @@ where
                     info!("Round timeout");
                     abort();
 
-                    self.handle_timeout(state, latest_certified_round_change.as_ref()).await;
+                    self.handle_timeout(state, &mut latest_self_round_change).await;
                     round += 1;
                 }
             }
@@ -504,7 +504,7 @@ where
     async fn handle_timeout(
         &self,
         state: SharedRunState,
-        latest_certified_round_change: &Mutex<Option<RoundChangeMessageSigned>>,
+        latest_self_round_change: &mut Option<RoundChangeMessageSigned>,
     ) {
         let view = state.view;
         let run_state = state.get();
@@ -543,16 +543,11 @@ where
                     .broadcast_message(IBFTBroadcastMessage::RoundChange(&round_change))
                     .await;
 
-                *latest_certified_round_change.lock().await = Some(round_change);
+                *latest_self_round_change = Some(round_change);
             }
             // Else, broadcast round change message with either none or previously created prepared proposed
-            _ => match latest_certified_round_change.lock().await.as_mut() {
+            _ => match latest_self_round_change {
                 Some(round_change) => {
-                    assert!(
-                        round_change.latest_prepared_proposed().is_some(),
-                        "Latest certified round change exists but does not have prepared proposed"
-                    );
-
                     round_change.update_and_resign(view.round + 1, &self.signer);
 
                     self.broadcast
@@ -567,6 +562,8 @@ where
                     self.broadcast
                         .broadcast_message(IBFTBroadcastMessage::RoundChange(&round_change))
                         .await;
+
+                    *latest_self_round_change = Some(round_change);
                 }
             },
         }
