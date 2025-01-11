@@ -144,7 +144,7 @@ where
         let (tx, rx) = oneshot::channel();
 
         let task = tokio::spawn(async move {
-            match ibft.run_ibft_round0(state).await {
+            match ibft.run_ibft_round_0(state).await {
                 Ok(finalized_block) => {
                     let _ = tx.send(finalized_block);
                 }
@@ -158,8 +158,9 @@ where
         (rx, task)
     }
 
-    async fn run_ibft_round0(&self, state: SharedRunState) -> Result<CommitSeals, IBFTError> {
+    async fn run_ibft_round_0(&self, state: SharedRunState) -> Result<CommitSeals, IBFTError> {
         let view = state.view;
+        let quorum = state.quorum;
 
         assert_eq!(view.round, 0, "Round must be 0");
         assert_eq!(
@@ -168,164 +169,15 @@ where
             "Initial run state must be Proposal"
         );
 
-        let should_propose = self
-            .validator_manager
-            .is_proposer(self.signer.address(), view);
-
-        let proposed_block_digest = if should_propose {
-            info!("We are the block proposer");
-
-            let raw_block = self
-                .block_builder
-                .build_block(view.height)
-                .map_err(IBFTError::BlockBuild)?;
-            debug!("Built the proposal block");
-
-            let proposal = ProposalMessage::new(view, raw_block, None).into_signed(&self.signer);
-            let proposed_block_digest = proposal.proposed_block_digest();
-
-            self.broadcast
-                .broadcast_message(IBFTBroadcastMessage::Proposal(&proposal))
-                .await;
-
-            self.messages.add_proposal_message(proposal).await;
-
-            proposed_block_digest
-        } else {
-            let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
-                if !proposal.verify_block_digest() {
-                    return Err(IBFTError::IncorrectProposalDigest);
-                }
-
-                if let Err(err) = self
-                    .block_verifier
-                    .verify_block(proposal.proposed_block().raw_block())
-                {
-                    return Err(IBFTError::InvalidProposalBlock(err));
-                }
-
-                Ok(())
-            };
-
-            // First subscribe so we don't miss the notification in the brief time we query the proposal.
-            let mut proposal_rx = self.messages.subscribe_proposal();
-            if let Some(digest) = self
-                .messages
-                .get_valid_proposal_digest(view, proposal_verify_fn)
-                .await
-            {
-                digest?
-            } else {
-                // Wait until we receive a proposal from peers for the given view
-                loop {
-                    let proposal_view = proposal_rx
-                        .recv()
-                        .await
-                        .expect("Proposal subscriber channel should not close");
-                    if proposal_view == view {
-                        break;
-                    }
-                }
-
-                let digest = self
-                    .messages
-                    .get_valid_proposal_digest(view, proposal_verify_fn)
-                    .await
-                    .expect(
-                        "At this state, nothing else should be pruning or taking the proposal",
-                    )?;
-                debug!("Received valid proposal message");
-
-                let prepare = PrepareMessage::new(view, digest).into_signed(&self.signer);
-
-                self.broadcast
-                    .broadcast_message(IBFTBroadcastMessage::Prepare(&prepare))
-                    .await;
-
-                self.messages
-                    .add_prepare_message(prepare, self.signer.address())
-                    .await;
-
-                digest
-            }
-        };
+        let proposed_block_digest = self.run_proposal_0(view).await?;
 
         state.update(RunState::Prepare);
-        debug!("Moved to prepare state");
-
-        let quorum = state.quorum;
-
-        // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
-        // and querying by view also ensures height and round matches.
-        let verify_prepare_fn = |prepare: &PrepareMessageSigned| -> bool {
-            prepare.proposed_block_digest() == proposed_block_digest
-        };
-        let mut prepare_rx = self.messages.subscribe_prepare();
-        let mut prepare_count = self
-            .messages
-            .get_valid_prepare_count(view, verify_prepare_fn)
-            .await;
-        // Wait for new prepare messages until we hit quorum - 1 (quorum - 1 because proposer does not broadcast prepare)
-        while prepare_count < quorum - 1 {
-            let new_prepare_view = prepare_rx
-                .recv()
-                .await
-                .expect("Prepare subscriber channel should not close");
-            if new_prepare_view == view {
-                prepare_count += 1;
-                if prepare_count == quorum - 1 {
-                    prepare_count = self
-                        .messages
-                        .get_valid_prepare_count(view, verify_prepare_fn)
-                        .await;
-                }
-            }
-        }
-        debug!("Received quorum prepare messages");
-
-        let commit =
-            CommitMessage::new(view, proposed_block_digest, &self.signer).into_signed(&self.signer);
-
-        self.broadcast
-            .broadcast_message(IBFTBroadcastMessage::Commit(&commit))
-            .await;
-
-        self.messages
-            .add_commit_message(commit, self.signer.address())
-            .await;
+        self.run_prepare(view, proposed_block_digest, quorum).await;
 
         state.update(RunState::Commit);
-        debug!("Moved to commit state");
+        let commit_seals = self.run_commit(view, proposed_block_digest, quorum).await;
 
-        // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
-        // and querying by view also ensures height and round matches.
-        let verify_commit_fn = |commit: &CommitMessageSigned| -> bool {
-            commit.proposed_block_digest() == proposed_block_digest
-        };
-        let mut commit_rx = self.messages.subscribe_commit();
-        let (mut commit_seals, mut commit_count) = self
-            .messages
-            .get_valid_commit_seals(view, verify_commit_fn, quorum)
-            .await;
-        // Wait for new commit messages until we hit quorum
-        while commit_count < quorum {
-            let new_commit_view = commit_rx
-                .recv()
-                .await
-                .expect("Commit subscriber channel should not close");
-            if new_commit_view == view {
-                commit_count += 1;
-                if commit_count == quorum {
-                    (commit_seals, commit_count) = self
-                        .messages
-                        .get_valid_commit_seals(view, verify_commit_fn, quorum)
-                        .await;
-                }
-            }
-        }
-        debug!("Received quorum commit messages");
-
-        Ok(commit_seals.expect("Must have value when reached quorum"))
+        Ok(commit_seals)
     }
 
     async fn run_ibft_round(
@@ -473,10 +325,174 @@ where
         todo!()
     }
 
-    async fn wait_for_rcc(
+    async fn run_proposal_0(&self, view: View) -> Result<[u8; 32], IBFTError> {
+        let should_propose = self
+            .validator_manager
+            .is_proposer(self.signer.address(), view);
+
+        if should_propose {
+            info!("We are the block proposer");
+
+            let raw_block = self
+                .block_builder
+                .build_block(view.height)
+                .map_err(IBFTError::BlockBuild)?;
+            debug!("Built the proposal block");
+
+            let proposal = ProposalMessage::new(view, raw_block, None).into_signed(&self.signer);
+            let proposed_block_digest = proposal.proposed_block_digest();
+
+            self.broadcast
+                .broadcast_message(IBFTBroadcastMessage::Proposal(&proposal))
+                .await;
+
+            self.messages.add_proposal_message(proposal).await;
+
+            Ok(proposed_block_digest)
+        } else {
+            let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
+                if !proposal.verify_block_digest() {
+                    return Err(IBFTError::IncorrectProposalDigest);
+                }
+
+                if let Err(err) = self
+                    .block_verifier
+                    .verify_block(proposal.proposed_block().raw_block())
+                {
+                    return Err(IBFTError::InvalidProposalBlock(err));
+                }
+
+                Ok(())
+            };
+
+            // First subscribe so we don't miss the notification in the brief time we query the proposal.
+            let mut proposal_rx = self.messages.subscribe_proposal();
+
+            let digest = self
+                .messages
+                .get_valid_proposal_digest(view, proposal_verify_fn)
+                .await;
+            if let Some(digest) = digest {
+                return digest;
+            }
+
+            // Wait until we receive a proposal from peers for the given view
+            loop {
+                let proposal_view = proposal_rx
+                    .recv()
+                    .await
+                    .expect("Proposal subscriber channel should not close");
+                if proposal_view == view {
+                    break;
+                }
+            }
+
+            let digest = self
+                .messages
+                .get_valid_proposal_digest(view, proposal_verify_fn)
+                .await
+                .expect("At this state, nothing else should be pruning or taking the proposal")?;
+            debug!("Received valid proposal message");
+
+            let prepare = PrepareMessage::new(view, digest).into_signed(&self.signer);
+
+            self.broadcast
+                .broadcast_message(IBFTBroadcastMessage::Prepare(&prepare))
+                .await;
+
+            self.messages
+                .add_prepare_message(prepare, self.signer.address())
+                .await;
+
+            Ok(digest)
+        }
+    }
+
+    async fn run_prepare(&self, view: View, proposed_block_digest: [u8; 32], quorum: usize) {
+        debug!("Started prepare state");
+        // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
+        // and querying by view also ensures height and round matches.
+        let verify_prepare_fn = |prepare: &PrepareMessageSigned| -> bool {
+            prepare.proposed_block_digest() == proposed_block_digest
+        };
+        let mut prepare_rx = self.messages.subscribe_prepare();
+        let mut prepare_count = self
+            .messages
+            .get_valid_prepare_count(view, verify_prepare_fn)
+            .await;
+        // Wait for new prepare messages until we hit quorum - 1 (quorum - 1 because proposer does not broadcast prepare)
+        while prepare_count < quorum - 1 {
+            let new_prepare_view = prepare_rx
+                .recv()
+                .await
+                .expect("Prepare subscriber channel should not close");
+            if new_prepare_view == view {
+                prepare_count += 1;
+                if prepare_count == quorum - 1 {
+                    prepare_count = self
+                        .messages
+                        .get_valid_prepare_count(view, verify_prepare_fn)
+                        .await;
+                }
+            }
+        }
+        debug!("Received quorum prepare messages");
+
+        let commit =
+            CommitMessage::new(view, proposed_block_digest, &self.signer).into_signed(&self.signer);
+
+        self.broadcast
+            .broadcast_message(IBFTBroadcastMessage::Commit(&commit))
+            .await;
+
+        self.messages
+            .add_commit_message(commit, self.signer.address())
+            .await;
+    }
+
+    async fn run_commit(
         &self,
         view: View,
-        latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
+        proposed_block_digest: [u8; 32],
+        quorum: usize,
+    ) -> CommitSeals {
+        debug!("Started commit state");
+
+        // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
+        // and querying by view also ensures height and round matches.
+        let verify_commit_fn = |commit: &CommitMessageSigned| -> bool {
+            commit.proposed_block_digest() == proposed_block_digest
+        };
+        let mut commit_rx = self.messages.subscribe_commit();
+        let (mut commit_seals, mut commit_count) = self
+            .messages
+            .get_valid_commit_seals(view, verify_commit_fn, quorum)
+            .await;
+        // Wait for new commit messages until we hit quorum
+        while commit_count < quorum {
+            let new_commit_view = commit_rx
+                .recv()
+                .await
+                .expect("Commit subscriber channel should not close");
+            if new_commit_view == view {
+                commit_count += 1;
+                if commit_count == quorum {
+                    (commit_seals, commit_count) = self
+                        .messages
+                        .get_valid_commit_seals(view, verify_commit_fn, quorum)
+                        .await;
+                }
+            }
+        }
+        debug!("Received quorum commit messages");
+
+        commit_seals.expect("Must have value when reached quorum")
+    }
+
+    async fn wait_for_rcc(
+        &self,
+        _view: View,
+        _latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
     ) {
     }
 
