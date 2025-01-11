@@ -348,64 +348,64 @@ where
 
             self.messages.add_proposal_message(proposal).await;
 
-            Ok(proposed_block_digest)
-        } else {
-            let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
-                if !proposal.verify_block_digest() {
-                    return Err(IBFTError::IncorrectProposalDigest);
-                }
-
-                if let Err(err) = self
-                    .block_verifier
-                    .verify_block(proposal.proposed_block().raw_block())
-                {
-                    return Err(IBFTError::InvalidProposalBlock(err));
-                }
-
-                Ok(())
-            };
-
-            // First subscribe so we don't miss the notification in the brief time we query the proposal.
-            let mut proposal_rx = self.messages.subscribe_proposal();
-
-            let digest = self
-                .messages
-                .get_valid_proposal_digest(view, proposal_verify_fn)
-                .await;
-            if let Some(digest) = digest {
-                return digest;
-            }
-
-            // Wait until we receive a proposal from peers for the given view
-            loop {
-                let proposal_view = proposal_rx
-                    .recv()
-                    .await
-                    .expect("Proposal subscriber channel should not close");
-                if proposal_view == view {
-                    break;
-                }
-            }
-
-            let digest = self
-                .messages
-                .get_valid_proposal_digest(view, proposal_verify_fn)
-                .await
-                .expect("At this state, nothing else should be pruning or taking the proposal")?;
-            debug!("Received valid proposal message");
-
-            let prepare = PrepareMessage::new(view, digest).into_signed(&self.signer);
-
-            self.broadcast
-                .broadcast_message(IBFTBroadcastMessage::Prepare(&prepare))
-                .await;
-
-            self.messages
-                .add_prepare_message(prepare, self.signer.address())
-                .await;
-
-            Ok(digest)
+            return Ok(proposed_block_digest);
         }
+
+        let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
+            if !proposal.verify_block_digest() {
+                return Err(IBFTError::IncorrectProposalDigest);
+            }
+
+            if let Err(err) = self
+                .block_verifier
+                .verify_block(proposal.proposed_block().raw_block())
+            {
+                return Err(IBFTError::InvalidProposalBlock(err));
+            }
+
+            Ok(())
+        };
+
+        // First subscribe so we don't miss the notification in the brief time we query the proposal.
+        let mut proposal_rx = self.messages.subscribe_proposal();
+
+        let digest = self
+            .messages
+            .get_valid_proposal_digest(view, proposal_verify_fn)
+            .await;
+        if let Some(digest) = digest {
+            return digest;
+        }
+
+        // Wait until we receive a proposal from peers for the given view
+        loop {
+            let proposal_view = proposal_rx
+                .recv()
+                .await
+                .expect("Proposal subscriber channel should not close");
+            if proposal_view == view {
+                break;
+            }
+        }
+
+        let digest = self
+            .messages
+            .get_valid_proposal_digest(view, proposal_verify_fn)
+            .await
+            .expect("At this state, nothing else should be pruning or taking the proposal")?;
+        debug!("Received valid proposal message");
+
+        let prepare = PrepareMessage::new(view, digest).into_signed(&self.signer);
+
+        self.broadcast
+            .broadcast_message(IBFTBroadcastMessage::Prepare(&prepare))
+            .await;
+
+        self.messages
+            .add_prepare_message(prepare, self.signer.address())
+            .await;
+
+        Ok(digest)
     }
 
     async fn run_prepare(&self, view: View, proposed_block_digest: [u8; 32], quorum: usize) {
