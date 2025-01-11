@@ -329,6 +329,35 @@ impl RoundChangeMessageSigned {
         &self.message.latest_prepared_proposed
     }
 
+    /// Returns the `RoundChangeMetadata` by cloning inner fields
+    pub fn clone_metadata(&self) -> RoundChangeMetadata {
+        RoundChangeMetadata {
+            view: self.view(),
+            latest_prepared_certificate: self.latest_prepared_proposed().as_ref().map(|p| {
+                let pc = &p.prepared_certificate;
+                PreparedCertificate {
+                    proposal_meta: ProposalMetadata {
+                        view: pc.proposal_meta.view,
+                        proposed_block_digest: pc.proposal_meta.proposed_block_digest,
+                        signature: pc.proposal_meta.signature,
+                    },
+                    prepare_messages: pc
+                        .prepare_messages
+                        .iter()
+                        .map(|m| PrepareMessageSigned {
+                            message: PrepareMessage {
+                                view: m.view(),
+                                proposed_block_digest: m.message.proposed_block_digest,
+                            },
+                            signature: m.signature,
+                        })
+                        .collect(),
+                }
+            }),
+            signature: self.signature,
+        }
+    }
+
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         self.signature.recover_from_prehash(self.message.digest())
     }
