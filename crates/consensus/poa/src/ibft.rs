@@ -88,7 +88,7 @@ where
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
-            let (rcc_rx, rcc_task) = self.watch_rcc(view);
+            let (rcc_rx, rcc_task) = self.watch_future_rcc(view);
             let (round_finished, round_task) = self.start_ibft_round(state.clone());
 
             let abort = move || {
@@ -479,7 +479,7 @@ where
     ) {
     }
 
-    fn watch_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_future_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             // ibft.wait_until_rcc(state).await;
