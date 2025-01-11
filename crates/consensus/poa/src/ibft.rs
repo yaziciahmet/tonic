@@ -78,7 +78,8 @@ where
         info!("Running consensus height {}. quorum={}", height, quorum);
 
         let mut round = 0;
-        // This will be used for tracking the latest prepared proposed of the height
+        // Tracking self sent latest round change message separately to be able to track
+        // latest prepared proposed in an optimized manner.
         let mut latest_self_round_change = None;
         loop {
             let view = View::new(height, round);
