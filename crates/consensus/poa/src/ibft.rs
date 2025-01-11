@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::select;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tonic_primitives::Signer;
 use tracing::{debug, error, info};
@@ -15,7 +15,7 @@ use crate::types::{
     digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
     IBFTBroadcastMessage, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
     PreparedProposed, ProposalMessage, ProposalMessageSigned, RoundChangeMessage,
-    RoundChangeMessageSigned,
+    RoundChangeMessageSigned, RoundChangeMetadata,
 };
 
 use super::messages::ConsensusMessages;
@@ -90,7 +90,8 @@ where
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
             let (rcc_rx, rcc_task) = self.watch_future_rcc(view);
-            let (round_finished, round_task) = self.start_ibft_round(state.clone());
+            let (round_finished, round_task) =
+                self.start_ibft_round(state.clone(), latest_self_round_change.as_ref());
 
             let abort = move || {
                 round_task.abort();
@@ -139,21 +140,37 @@ where
     fn start_ibft_round(
         &self,
         state: SharedRunState,
+        latest_self_round_change: Option<&RoundChangeMessageSigned>,
     ) -> (oneshot::Receiver<CommitSeals>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
 
-        let task = tokio::spawn(async move {
-            match ibft.run_ibft_round_0(state).await {
-                Ok(finalized_block) => {
-                    let _ = tx.send(finalized_block);
+        let task = if state.view.round == 0 {
+            tokio::spawn(async move {
+                match ibft.run_ibft_round_0(state).await {
+                    Ok(commit_seals) => {
+                        let _ = tx.send(commit_seals);
+                    }
+                    Err(err) => {
+                        // TODO: think about what to do here
+                        error!("Error occurred during IBFT run: {err}");
+                    }
                 }
-                Err(err) => {
-                    // TODO: think about what to do here
-                    error!("Error occurred during IBFT run: {err}");
+            })
+        } else {
+            let latest_self_round_change = latest_self_round_change.map(|rcm| rcm.clone_metadata());
+            tokio::spawn(async move {
+                match ibft.run_ibft_round_1(state, latest_self_round_change).await {
+                    Ok(commit_seals) => {
+                        let _ = tx.send(commit_seals);
+                    }
+                    Err(err) => {
+                        // TODO: think about what to do here
+                        error!("Error occurred during IBFT run: {err}");
+                    }
                 }
-            }
-        });
+            })
+        };
 
         (rx, task)
     }
@@ -180,10 +197,10 @@ where
         Ok(commit_seals)
     }
 
-    async fn run_ibft_round_non_0(
+    async fn run_ibft_round_1(
         &self,
         state: SharedRunState,
-        latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
+        latest_self_round_change: Option<RoundChangeMetadata>,
     ) -> Result<CommitSeals, IBFTError> {
         let view = state.view;
         let quorum = state.quorum;
@@ -200,7 +217,7 @@ where
             .is_proposer(self.signer.address(), view);
 
         let proposed_block_digest = if should_propose {
-            let _rcc = self.wait_for_rcc(view, latest_certified_round_change).await;
+            let _rcc = self.wait_for_rcc(view, latest_self_round_change).await;
             todo!()
         } else {
             let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
@@ -492,7 +509,7 @@ where
     async fn wait_for_rcc(
         &self,
         _view: View,
-        _latest_certified_round_change: Arc<Mutex<Option<RoundChangeMessageSigned>>>,
+        _latest_self_round_change: Option<RoundChangeMetadata>,
     ) {
     }
 
