@@ -1,9 +1,9 @@
 [package]
 name = "tonic-p2p"
 version = { workspace = true }
+authors = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
-authors = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
@@ -13,17 +13,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 borsh = { workspace = true }
 futures = { workspace = true }
-libp2p = { version = "0.54", default-features = false, features = [
-  "gossipsub",
-  "identify",
-  "kad",
-  "macros",
-  "noise",
-  "secp256k1",
-  "tcp",
-  "tokio",
-  "yamux",
-] }
+libp2p = { version = "0.54", default-features = false, features = ["gossipsub", "identify", "kad", "macros", "noise", "secp256k1", "tcp", "tokio", "yamux"] }
 sha2 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
