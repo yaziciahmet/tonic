@@ -72,6 +72,6 @@ mod tests {
         let _finalized_block = engine.run_height(2, rx).await;
         let (_tx, rx) = oneshot::channel();
         let finalized_block = engine.run_height(3, rx).await;
-        dbg!(finalized_block);
+        assert!(finalized_block.is_some());
     }
 }

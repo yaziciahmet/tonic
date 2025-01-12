@@ -72,10 +72,10 @@ where
         height: u64,
         mut cancel: oneshot::Receiver<()>,
     ) -> Option<FinalizedBlock> {
+        info!("Running consensus height {}", height);
+
         let quorum = self.validator_manager.quorum(height);
         assert_ne!(quorum, 0, "Quorum must be greater than 0");
-
-        info!("Running consensus height {}. quorum={}", height, quorum);
 
         let mut round = 0;
         // Tracking self sent latest round change message separately to be able to track
@@ -83,9 +83,9 @@ where
         let mut latest_self_round_change = None;
         loop {
             let view = View::new(height, round);
-            let state = SharedRunState::new(view, quorum);
+            let state = SharedRunState::new(view);
 
-            info!("Running consensus round {}", view.round);
+            info!("Round: {}", view.round);
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
@@ -142,10 +142,11 @@ where
         state: SharedRunState,
         latest_self_round_change: Option<&RoundChangeMessageSigned>,
     ) -> (oneshot::Receiver<CommitSeals>, JoinHandle<()>) {
+        let view = state.view;
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
 
-        let task = if state.view.round == 0 {
+        let task = if view.round == 0 {
             tokio::spawn(async move {
                 match ibft.run_ibft_round_0(state).await {
                     Ok(commit_seals) => {
@@ -158,7 +159,21 @@ where
                 }
             })
         } else {
-            let latest_self_round_change = latest_self_round_change.map(|rcm| rcm.clone_metadata());
+            let latest_self_round_change = match latest_self_round_change {
+                Some(round_change) => {
+                    if round_change.view() == view
+                        && self
+                            .validator_manager
+                            .is_proposer(self.signer.address(), view)
+                    {
+                        Some(round_change.clone_metadata())
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            };
+
             tokio::spawn(async move {
                 match ibft.run_ibft_round_1(state, latest_self_round_change).await {
                     Ok(commit_seals) => {
@@ -177,7 +192,7 @@ where
 
     async fn run_ibft_round_0(&self, state: SharedRunState) -> Result<CommitSeals, IBFTError> {
         let view = state.view;
-        let quorum = state.quorum;
+        let quorum = self.validator_manager.quorum(view.height);
 
         assert_eq!(view.round, 0, "Round must be 0");
         assert_eq!(
@@ -203,7 +218,7 @@ where
         latest_self_round_change: Option<RoundChangeMetadata>,
     ) -> Result<CommitSeals, IBFTError> {
         let view = state.view;
-        let quorum = state.quorum;
+        let quorum = self.validator_manager.quorum(view.height);
 
         assert_ne!(view.round, 0, "Round must be greater than 0");
         assert_eq!(
@@ -211,6 +226,13 @@ where
             RunState::Proposal,
             "Initial run state must be Proposal"
         );
+        if let Some(rc) = &latest_self_round_change {
+            assert_eq!(
+                rc.view(),
+                view,
+                "Self round change should only be provided if it is for the current view"
+            );
+        }
 
         let should_propose = self
             .validator_manager
@@ -558,11 +580,13 @@ where
                     .messages
                     .take_valid_prepare_messages(view, verify_prepare_fn)
                     .await;
+
+                let quorum = self.validator_manager.quorum(view.height);
                 assert!(
-                    prepares.len() >= state.quorum - 1,
+                    prepares.len() >= quorum,
                     "Got {} prepares while prepare quorum is {} in timeout handler",
                     prepares.len(),
-                    state.quorum - 1,
+                    quorum,
                 );
 
                 let prepared_proposed = PreparedProposed::new(proposal, prepares);
@@ -686,15 +710,13 @@ impl RunState {
 #[derive(Debug, Clone)]
 struct SharedRunState {
     view: View,
-    quorum: usize,
     run_state: Arc<AtomicU8>,
 }
 
 impl SharedRunState {
-    fn new(view: View, quorum: usize) -> Self {
+    fn new(view: View) -> Self {
         Self {
             view,
-            quorum,
             run_state: Arc::new(AtomicU8::new(RunState::Proposal as u8)),
         }
     }
@@ -724,6 +746,4 @@ enum IBFTError {
     InvalidRoundChangeInCertificate,
     #[error("Duplicate round change message in certificate")]
     DuplicateRoundChangeInCertificate,
-    #[error("Proposed block's round does not match the round change certificate's highest round")]
-    ProposedBlockAndCertificateRoundMismatch,
 }
