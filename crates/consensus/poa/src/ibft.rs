@@ -643,7 +643,7 @@ where
     fn watch_future_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
-            // ibft.wait_until_rcc(state).await;
+            // TODO: actually watch for future rcc
             tokio::time::sleep(Duration::from_secs(9999)).await;
             let _ = tx.send(());
         });
