@@ -493,7 +493,7 @@ where
         let mut commit_rx = self.messages.subscribe_commit();
         let (mut commit_seals, mut commit_count) = self
             .messages
-            .get_valid_commit_seals(view, verify_commit_fn, quorum)
+            .take_valid_commit_seals(view, verify_commit_fn, quorum)
             .await;
         // Wait for new commit messages until we hit quorum
         while commit_count < quorum {
@@ -506,7 +506,7 @@ where
                 if commit_count == quorum {
                     (commit_seals, commit_count) = self
                         .messages
-                        .get_valid_commit_seals(view, verify_commit_fn, quorum)
+                        .take_valid_commit_seals(view, verify_commit_fn, quorum)
                         .await;
                 }
             }

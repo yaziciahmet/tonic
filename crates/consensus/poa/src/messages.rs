@@ -1,4 +1,5 @@
 use std::collections::{btree_map, hash_map, BTreeMap, HashMap};
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -348,8 +349,8 @@ impl ConsensusMessages {
     }
 
     /// Verifies and prunes the commit messages for the given view with the given verify_fn.
-    /// Returns commit seals (if valid message count is >= quorum), and the valid message count.
-    pub async fn get_valid_commit_seals<F>(
+    /// Consumes commits and returns seals (if valid message count is >= quorum), and returns the valid message count.
+    pub async fn take_valid_commit_seals<F>(
         &self,
         view: View,
         verify_fn: F,
@@ -364,13 +365,17 @@ impl ConsensusMessages {
         // Prune invalid messages
         messages.retain(|_, commit| verify_fn(commit));
 
-        let commit_seals = if messages.len() >= quorum {
-            Some(messages.iter().map(|(_, msg)| msg.commit_seal()).collect())
-        } else {
-            None
-        };
+        let count = messages.len();
+        if count >= quorum {
+            let messages = mem::take(messages)
+                .into_values()
+                .map(|commit| commit.commit_seal())
+                .collect();
 
-        (commit_seals, messages.len())
+            (Some(messages), count)
+        } else {
+            (None, count)
+        }
     }
 
     /// Takes the proposal message for the given view.
