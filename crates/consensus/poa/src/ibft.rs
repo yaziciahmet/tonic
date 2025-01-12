@@ -1,4 +1,3 @@
-use std::cmp;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
@@ -17,11 +16,10 @@ use crate::types::{
     PreparedProposed, ProposalMessage, ProposalMessageSigned, RawBlock, RoundChangeCertificate,
     RoundChangeMessage, RoundChangeMessageSigned,
 };
+use crate::MAX_ROUND;
 
 use super::messages::ConsensusMessages;
 use super::types::View;
-
-const TIMEOUT_MULTIPLIER: [u32; 12] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 #[derive(Clone)]
 pub struct IBFT<V, B, BV, BB>
@@ -82,6 +80,10 @@ where
         // latest prepared proposed in an optimized manner.
         let mut latest_self_round_change = None;
         loop {
+            if round > MAX_ROUND {
+                panic!("Not producing blocks for a long time, chain is dead");
+            }
+
             let view = View::new(height, round);
             let state = SharedRunState::new(view);
 
@@ -789,9 +791,19 @@ where
     }
 
     fn get_round_timeout(&self, round: u32) -> Duration {
-        let idx = cmp::min(round, TIMEOUT_MULTIPLIER.len() as u32 - 1);
+        const TABLE_SIZE: usize = (MAX_ROUND + 1) as usize;
+        const TIMEOUT_MULTIPLIER: [u32; TABLE_SIZE] = {
+            let mut arr = [0; TABLE_SIZE];
+            let mut i = 0;
+            while i < TABLE_SIZE {
+                arr[i] = 1 << i;
+                i += 1;
+            }
+            arr
+        };
+
         self.base_round_time
-            .saturating_mul(TIMEOUT_MULTIPLIER[idx as usize])
+            .saturating_mul(TIMEOUT_MULTIPLIER[round as usize])
     }
 }
 

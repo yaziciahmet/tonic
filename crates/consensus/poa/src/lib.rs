@@ -5,6 +5,10 @@ pub mod ibft;
 pub mod messages;
 pub mod types;
 
+/// Total of 25 rounds with 2 seconds base timeout corresponds to about 776 days for a single height.
+/// If a block can't be produced for 776 days, it is safe to assume that the chain is dead.
+pub(crate) const MAX_ROUND: u32 = 24;
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
