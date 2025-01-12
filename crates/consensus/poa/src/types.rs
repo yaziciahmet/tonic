@@ -325,23 +325,29 @@ impl RoundChangeMessageSigned {
         self.signature = signer.sign_prehash(prehash);
     }
 
-    pub fn latest_prepared_proposed(&self) -> &Option<PreparedProposed> {
-        &self.message.latest_prepared_proposed
+    pub fn latest_prepared_proposed(&self) -> Option<&PreparedProposed> {
+        self.message.latest_prepared_proposed.as_ref()
     }
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         self.signature.recover_from_prehash(self.message.digest())
     }
 
-    pub fn into_metadata(self) -> RoundChangeMetadata {
-        RoundChangeMetadata {
-            view: self.message.view,
-            latest_prepared_certificate: self
-                .message
-                .latest_prepared_proposed
-                .map(|p| p.prepared_certificate),
-            signature: self.signature,
-        }
+    pub fn into_metadata(self) -> (Option<ProposedBlock>, RoundChangeMetadata) {
+        let (proposed_block, prepared_certificate) =
+            if let Some(p) = self.message.latest_prepared_proposed {
+                (Some(p.proposed_block), Some(p.prepared_certificate))
+            } else {
+                (None, None)
+            };
+        (
+            proposed_block,
+            RoundChangeMetadata {
+                view: self.message.view,
+                latest_prepared_certificate: prepared_certificate,
+                signature: self.signature,
+            },
+        )
     }
 }
 
@@ -414,14 +420,16 @@ pub struct RoundChangeCertificate {
     pub round_change_messages: Vec<RoundChangeMetadata>,
 }
 
+pub type RawBlock = Vec<u8>;
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedBlock {
-    raw_block: Vec<u8>,
+    raw_block: RawBlock,
     round: u32,
 }
 
 impl ProposedBlock {
-    pub fn new(raw_block: Vec<u8>, round: u32) -> Self {
+    pub fn new(raw_block: RawBlock, round: u32) -> Self {
         Self { raw_block, round }
     }
 
@@ -431,6 +439,10 @@ impl ProposedBlock {
 
     pub fn round(&self) -> u32 {
         self.round
+    }
+
+    pub fn into_raw_block(self) -> RawBlock {
+        self.raw_block
     }
 
     pub fn digest(&self) -> [u8; 32] {

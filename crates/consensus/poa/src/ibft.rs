@@ -14,7 +14,7 @@ use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
     IBFTBroadcastMessage, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
-    PreparedProposed, ProposalMessage, ProposalMessageSigned, RoundChangeCertificate,
+    PreparedProposed, ProposalMessage, ProposalMessageSigned, RawBlock, RoundChangeCertificate,
     RoundChangeMessage, RoundChangeMessageSigned,
 };
 
@@ -324,7 +324,7 @@ where
         if should_propose {
             info!("We are the block proposer");
 
-            let _rcc = self.wait_for_rcc(view, quorum).await;
+            let (_rcc, _raw_block) = self.wait_for_rcc(view, quorum).await;
             todo!()
         }
 
@@ -524,7 +524,11 @@ where
         commit_seals.expect("Must have value when reached quorum")
     }
 
-    async fn wait_for_rcc(&self, view: View, quorum: usize) -> RoundChangeCertificate {
+    async fn wait_for_rcc(
+        &self,
+        view: View,
+        quorum: usize,
+    ) -> (RoundChangeCertificate, Option<RawBlock>) {
         let verify_round_change_fn = |round_change: &RoundChangeMessageSigned| {
             let Some(prepared_proposed) = round_change.latest_prepared_proposed() else {
                 return true;
@@ -565,16 +569,44 @@ where
         }
         debug!("Received quorum round change messages");
 
-        // TODO: get one proposed block and validate it if its needed?
-        let round_changes = round_changes
-            .expect("Must have value when reached quorum")
-            .into_iter()
-            .map(|rc| rc.into_metadata())
-            .collect();
+        let mut round_changes = round_changes.expect("Must have value when reached quorum");
 
-        RoundChangeCertificate {
-            round_change_messages: round_changes,
-        }
+        let prepared_proposed_pos = round_changes
+            .iter()
+            .position(|round_change| round_change.latest_prepared_proposed().is_some());
+
+        let (metadata_list, raw_block) = match prepared_proposed_pos {
+            Some(pos) => {
+                let round_change = round_changes.swap_remove(pos);
+                let (Some(proposed_block), metadata) = round_change.into_metadata() else {
+                    panic!("Impossible to not have block while having prepared proposed");
+                };
+
+                let mut metadata_list = round_changes
+                    .into_iter()
+                    .map(|rc| rc.into_metadata().1)
+                    .collect::<Vec<_>>();
+
+                metadata_list.push(metadata);
+
+                (metadata_list, Some(proposed_block.into_raw_block()))
+            }
+            // No prepared certificate is found in any of the messages
+            None => {
+                let metadata_list = round_changes
+                    .into_iter()
+                    .map(|rc| rc.into_metadata().1)
+                    .collect::<Vec<_>>();
+                (metadata_list, None)
+            }
+        };
+
+        (
+            RoundChangeCertificate {
+                round_change_messages: metadata_list,
+            },
+            raw_block,
+        )
     }
 
     fn watch_future_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
