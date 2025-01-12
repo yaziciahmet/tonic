@@ -16,12 +16,10 @@ use crate::types::{
     PreparedProposed, ProposalMessage, ProposalMessageSigned, RawBlock, RoundChangeCertificate,
     RoundChangeMessage, RoundChangeMessageSigned,
 };
-use crate::MAX_ROUND;
+use crate::{MAX_ROUND, ROUND_ARRAY_SIZE};
 
 use super::messages::ConsensusMessages;
 use super::types::View;
-
-const ROUND_ARRAY_SIZE: usize = (MAX_ROUND + 1) as usize;
 
 #[derive(Clone)]
 pub struct IBFT<V, B, BV, BB>
@@ -639,8 +637,10 @@ where
     async fn wait_future_rcc(&self, view: View) -> u8 {
         let quorum = self.validator_manager.quorum(view.height);
 
-        let verify_round_change_fn = self.round_change_verify_fn(view.height);
-        tokio::time::sleep(Duration::from_secs(9999)).await;
+        let round_change_verify_fn = self.round_change_verify_fn(view.height);
+
+        let message_count_by_round = self.messages.round_change_count_by_round(view.height).await;
+
         todo!()
     }
 

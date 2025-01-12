@@ -11,7 +11,7 @@ use tracing::warn;
 
 use crate::backend::ValidatorManager;
 use crate::types::{CommitSeals, IBFTReceivedMessage};
-use crate::MAX_ROUND;
+use crate::{MAX_ROUND, ROUND_ARRAY_SIZE};
 
 use super::types::{
     CommitMessageSigned, PrepareMessageSigned, ProposalMessageSigned, RoundChangeMessageSigned,
@@ -446,6 +446,18 @@ impl ConsensusMessages {
             (None, count)
         }
     }
+
+    pub async fn round_change_count_by_round(&self, height: u64) -> [u32; ROUND_ARRAY_SIZE] {
+        let mut round_change_messages = self.round_change_messages.lock().await;
+        let messages_by_round = round_change_messages.height_entry(height).or_default();
+
+        let mut message_count_by_round = [0; ROUND_ARRAY_SIZE];
+        for (round, messages) in messages_by_round {
+            message_count_by_round[*round as usize] = messages.len() as u32;
+        }
+
+        message_count_by_round
+    }
 }
 
 #[derive(Debug)]
@@ -490,5 +502,9 @@ impl<T> ViewMap<T> {
 
     fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u8, T> {
         self.0.entry(view.height).or_default().entry(view.round)
+    }
+
+    fn height_entry(&mut self, height: u64) -> btree_map::Entry<'_, u64, BTreeMap<u8, T>> {
+        self.0.entry(height)
     }
 }

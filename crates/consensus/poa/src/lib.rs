@@ -8,6 +8,8 @@ pub mod types;
 /// Total of 25 rounds with 2 seconds base timeout corresponds to about 776 days for a single height.
 /// If a block can't be produced for 776 days, it is safe to assume that the chain is dead.
 pub(crate) const MAX_ROUND: u8 = 24;
+/// Const array size for arrays using indices as the round
+pub(crate) const ROUND_ARRAY_SIZE: usize = (MAX_ROUND + 1) as usize;
 
 #[cfg(test)]
 mod tests {
