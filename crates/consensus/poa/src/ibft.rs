@@ -328,7 +328,7 @@ where
         if should_propose {
             info!("We are the block proposer");
 
-            let (rcc, raw_block) = self.wait_for_rcc(view, quorum).await;
+            let (rcc, raw_block) = self.wait_rcc(view, quorum).await;
             let proposal = match raw_block {
                 Some(raw_block) => {
                     debug!("Found previously proposed block in round change certificate");
@@ -555,7 +555,7 @@ where
         commit_seals.expect("Must have value when reached quorum")
     }
 
-    async fn wait_for_rcc(
+    async fn wait_rcc(
         &self,
         view: View,
         quorum: usize,
