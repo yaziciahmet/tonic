@@ -516,7 +516,26 @@ where
         commit_seals.expect("Must have value when reached quorum")
     }
 
-    async fn wait_for_rcc(&self, _view: View) {}
+    async fn wait_for_rcc(&self, view: View) {
+        let verify_round_change_fn = |round_change: &RoundChangeMessageSigned| {
+            let Some(prepared_proposed) = round_change.latest_prepared_proposed() else {
+                return true;
+            };
+
+            let prepared_certificate = prepared_proposed.prepared_certificate();
+            let proposed_block_digest = prepared_proposed.proposed_block().digest();
+            if prepared_certificate.proposal().proposed_block_digest() != proposed_block_digest {
+                return false;
+            }
+
+            self.verify_prepared_certificate(
+                prepared_certificate,
+                view.height,
+                round_change.view().round,
+            )
+        };
+        let round_change_rx = self.messages.subscribe_round_change();
+    }
 
     fn watch_future_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();

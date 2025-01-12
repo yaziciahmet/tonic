@@ -371,7 +371,6 @@ impl ConsensusMessages {
                 .into_values()
                 .map(|commit| commit.commit_seal())
                 .collect();
-
             (Some(messages), count)
         } else {
             (None, count)
@@ -407,6 +406,33 @@ impl ConsensusMessages {
         messages.retain(|_, prepare| verify_fn(prepare));
 
         messages.into_values().collect()
+    }
+
+    /// Verifies and prunes the round change messages for the given view with the given verify_fn.
+    /// Takes round changes (if valid message count is >= quorum), and returns the valid message count.
+    pub async fn take_valid_round_change_messages<F>(
+        &self,
+        view: View,
+        verify_fn: F,
+        quorum: usize,
+    ) -> (Option<Vec<RoundChangeMessageSigned>>, usize)
+    where
+        F: Fn(&RoundChangeMessageSigned) -> bool,
+    {
+        let mut round_change_messages = self.round_change_messages.lock().await;
+        let messages = round_change_messages.view_entry(view).or_default();
+
+        // Prune invalid messages
+        // TODO: mark valid ones as true as this is expensive
+        messages.retain(|_, round_change| verify_fn(round_change));
+
+        let count = messages.len();
+        if count >= quorum {
+            let messages = mem::take(messages).into_values().collect();
+            (Some(messages), count)
+        } else {
+            (None, count)
+        }
     }
 }
 
