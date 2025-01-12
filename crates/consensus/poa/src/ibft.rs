@@ -14,8 +14,8 @@ use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
     IBFTBroadcastMessage, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
-    PreparedProposed, ProposalMessage, ProposalMessageSigned, RoundChangeMessage,
-    RoundChangeMessageSigned,
+    PreparedProposed, ProposalMessage, ProposalMessageSigned, RoundChangeCertificate,
+    RoundChangeMessage, RoundChangeMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -516,7 +516,9 @@ where
         commit_seals.expect("Must have value when reached quorum")
     }
 
-    async fn wait_for_rcc(&self, view: View) {
+    async fn wait_for_rcc(&self, view: View) -> RoundChangeCertificate {
+        let quorum = self.validator_manager.quorum(view.height);
+
         let verify_round_change_fn = |round_change: &RoundChangeMessageSigned| {
             let Some(prepared_proposed) = round_change.latest_prepared_proposed() else {
                 return true;
@@ -534,7 +536,38 @@ where
                 round_change.view().round,
             )
         };
-        let round_change_rx = self.messages.subscribe_round_change();
+        let mut round_change_rx = self.messages.subscribe_round_change();
+        let (mut round_changes, mut rc_count) = self
+            .messages
+            .take_valid_round_change_messages(view, verify_round_change_fn, quorum)
+            .await;
+        // Wait for new round change messages until we hit quorum
+        while rc_count < quorum {
+            let new_rc_view = round_change_rx
+                .recv()
+                .await
+                .expect("Round change subscriber channel should not close");
+            if new_rc_view == view {
+                rc_count += 1;
+                if rc_count == quorum {
+                    (round_changes, rc_count) = self
+                        .messages
+                        .take_valid_round_change_messages(view, verify_round_change_fn, quorum)
+                        .await;
+                }
+            }
+        }
+        debug!("Received quorum round change messages");
+
+        let round_changes = round_changes
+            .expect("Must have value when reached quorum")
+            .into_iter()
+            .map(|rc| rc.into_metadata())
+            .collect();
+
+        RoundChangeCertificate {
+            round_change_messages: round_changes,
+        }
     }
 
     fn watch_future_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {

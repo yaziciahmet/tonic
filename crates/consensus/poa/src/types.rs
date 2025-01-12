@@ -332,6 +332,17 @@ impl RoundChangeMessageSigned {
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         self.signature.recover_from_prehash(self.message.digest())
     }
+
+    pub fn into_metadata(self) -> RoundChangeMetadata {
+        RoundChangeMetadata {
+            view: self.message.view,
+            latest_prepared_certificate: self
+                .message
+                .latest_prepared_proposed
+                .map(|p| p.prepared_certificate),
+            signature: self.signature,
+        }
+    }
 }
 
 impl Clone for RoundChangeMessageSigned {
