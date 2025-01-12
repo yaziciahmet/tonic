@@ -11,6 +11,7 @@ use tracing::warn;
 
 use crate::backend::ValidatorManager;
 use crate::types::{CommitSeals, IBFTReceivedMessage};
+use crate::MAX_ROUND;
 
 use super::types::{
     CommitMessageSigned, PrepareMessageSigned, ProposalMessageSigned, RoundChangeMessageSigned,
@@ -76,10 +77,13 @@ where
                 if view.height <= self.height() {
                     return Ok(());
                 }
+                if view.round > MAX_ROUND {
+                    return Err(anyhow!("Received proposal with too high round"));
+                }
 
                 let sender = proposal.recover_signer()?;
                 if sender == self.address {
-                    return Err(anyhow!("Received self signed message"));
+                    return Err(anyhow!("Received self signed proposal"));
                 }
 
                 if !self.validator_manager.is_proposer(sender, view) {
@@ -94,14 +98,17 @@ where
                 if view.height <= self.height() {
                     return Ok(());
                 }
+                if view.round > MAX_ROUND {
+                    return Err(anyhow!("Received prepare with too high round"));
+                }
 
                 let sender = prepare.recover_signer()?;
                 if sender == self.address {
-                    return Err(anyhow!("Received self signed message"));
+                    return Err(anyhow!("Received self signed prepare"));
                 }
 
                 if !self.validator_manager.is_validator(sender, view.height) {
-                    return Err(anyhow!("Message sender is not validator"));
+                    return Err(anyhow!("Prepare sender is not validator"));
                 }
 
                 if self.validator_manager.is_proposer(sender, view) {
@@ -116,14 +123,17 @@ where
                 if view.height <= self.height() {
                     return Ok(());
                 }
+                if view.round > MAX_ROUND {
+                    return Err(anyhow!("Received commit with too high round"));
+                }
 
                 let sender = commit.recover_signer()?;
                 if sender == self.address {
-                    return Err(anyhow!("Received self signed message"));
+                    return Err(anyhow!("Received self signed commit"));
                 }
 
                 if !self.validator_manager.is_validator(sender, view.height) {
-                    return Err(anyhow!("Message sender is not validator"));
+                    return Err(anyhow!("Commit sender is not validator"));
                 }
 
                 let seal_sender = commit.recover_commit_seal_signer()?;
@@ -141,18 +151,20 @@ where
                 if view.height <= self.height() {
                     return Ok(());
                 }
-
                 if view.round == 0 {
                     return Err(anyhow!("Received round change with round 0"));
+                }
+                if view.round > MAX_ROUND {
+                    return Err(anyhow!("Received round change with too high round"));
                 }
 
                 let sender = round_change.recover_signer()?;
                 if sender == self.address {
-                    return Err(anyhow!("Received self signed message"));
+                    return Err(anyhow!("Received self signed round change"));
                 }
 
                 if !self.validator_manager.is_validator(sender, view.height) {
-                    return Err(anyhow!("Message sender is not validator"));
+                    return Err(anyhow!("Round change sender is not validator"));
                 }
 
                 self.messages
