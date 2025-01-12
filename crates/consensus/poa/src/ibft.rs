@@ -669,6 +669,8 @@ where
         match run_state {
             // If commit, broadcast round change message with the newly created prepared proposed
             RunState::Commit => {
+                debug!("Able to compose a new prepared proposed for round change");
+
                 let proposal = self
                     .messages
                     .take_proposal_message(view)
@@ -707,6 +709,8 @@ where
             // Else, broadcast round change message with either none or previously created prepared proposed
             _ => match latest_self_round_change {
                 Some(round_change) => {
+                    debug!("Using previously created round change");
+
                     round_change.update_and_resign(view.round + 1, &self.signer);
 
                     self.broadcast
@@ -714,6 +718,8 @@ where
                         .await;
                 }
                 None => {
+                    debug!("No previously sent round change, creating new one");
+
                     let round_change =
                         RoundChangeMessage::new(View::new(view.height, view.round + 1), None)
                             .into_signed(&self.signer);
