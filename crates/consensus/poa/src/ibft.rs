@@ -478,13 +478,13 @@ where
         debug!("Started prepare state");
         // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
         // and querying by view also ensures height and round matches.
-        let verify_prepare_fn = |prepare: &PrepareMessageSigned| -> bool {
+        let prepare_verify_fn = |prepare: &PrepareMessageSigned| -> bool {
             prepare.proposed_block_digest() == proposed_block_digest
         };
         let mut prepare_rx = self.messages.subscribe_prepare();
         let mut prepare_count = self
             .messages
-            .get_valid_prepare_count(view, verify_prepare_fn)
+            .get_valid_prepare_count(view, prepare_verify_fn)
             .await;
         // Wait for new prepare messages until we hit quorum - 1 (quorum - 1 because proposer does not broadcast prepare)
         while prepare_count < quorum - 1 {
@@ -497,7 +497,7 @@ where
                 if prepare_count == quorum - 1 {
                     prepare_count = self
                         .messages
-                        .get_valid_prepare_count(view, verify_prepare_fn)
+                        .get_valid_prepare_count(view, prepare_verify_fn)
                         .await;
                 }
             }
@@ -526,13 +526,13 @@ where
 
         // We only need to verify the proposed block digest, signature check is enforced by `MessageHandler`,
         // and querying by view also ensures height and round matches.
-        let verify_commit_fn = |commit: &CommitMessageSigned| -> bool {
+        let commit_verify_fn = |commit: &CommitMessageSigned| -> bool {
             commit.proposed_block_digest() == proposed_block_digest
         };
         let mut commit_rx = self.messages.subscribe_commit();
         let (mut commit_seals, mut commit_count) = self
             .messages
-            .take_valid_commit_seals(view, verify_commit_fn, quorum)
+            .take_valid_commit_seals(view, commit_verify_fn, quorum)
             .await;
         // Wait for new commit messages until we hit quorum
         while commit_count < quorum {
@@ -545,7 +545,7 @@ where
                 if commit_count == quorum {
                     (commit_seals, commit_count) = self
                         .messages
-                        .take_valid_commit_seals(view, verify_commit_fn, quorum)
+                        .take_valid_commit_seals(view, commit_verify_fn, quorum)
                         .await;
                 }
             }
@@ -560,27 +560,12 @@ where
         view: View,
         quorum: usize,
     ) -> (RoundChangeCertificate, Option<RawBlock>) {
-        let verify_round_change_fn = |round_change: &RoundChangeMessageSigned| {
-            let Some(prepared_proposed) = round_change.latest_prepared_proposed() else {
-                return true;
-            };
+        let round_change_verify_fn = self.round_change_verify_fn(view.height);
 
-            let prepared_certificate = prepared_proposed.prepared_certificate();
-            let proposed_block_digest = prepared_proposed.proposed_block().digest();
-            if prepared_certificate.proposal().proposed_block_digest() != proposed_block_digest {
-                return false;
-            }
-
-            self.verify_prepared_certificate(
-                prepared_certificate,
-                view.height,
-                round_change.view().round,
-            )
-        };
         let mut round_change_rx = self.messages.subscribe_round_change();
         let (mut round_changes, mut rc_count) = self
             .messages
-            .take_valid_round_change_messages(view, verify_round_change_fn, quorum)
+            .take_valid_round_change_messages(view, &round_change_verify_fn, quorum)
             .await;
         // Wait for new round change messages until we hit quorum
         while rc_count < quorum {
@@ -593,7 +578,7 @@ where
                 if rc_count == quorum {
                     (round_changes, rc_count) = self
                         .messages
-                        .take_valid_round_change_messages(view, verify_round_change_fn, quorum)
+                        .take_valid_round_change_messages(view, &round_change_verify_fn, quorum)
                         .await;
                 }
             }
@@ -640,7 +625,7 @@ where
         )
     }
 
-    fn watch_future_rcc(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_future_rcc(&self, view: View) -> (oneshot::Receiver<u8>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
@@ -651,9 +636,12 @@ where
         (rx, task)
     }
 
-    async fn wait_future_rcc(&self, view: View) {
-        // TODO: actually watch for future rcc
+    async fn wait_future_rcc(&self, view: View) -> u8 {
+        let quorum = self.validator_manager.quorum(view.height);
+
+        let verify_round_change_fn = self.round_change_verify_fn(view.height);
         tokio::time::sleep(Duration::from_secs(9999)).await;
+        todo!()
     }
 
     fn watch_future_proposal(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
@@ -685,12 +673,12 @@ where
                     .take_proposal_message(view)
                     .await
                     .expect("Proposal must exist when past prepare state");
-                let verify_prepare_fn = |prepare: &PrepareMessageSigned| -> bool {
+                let prepare_verify_fn = |prepare: &PrepareMessageSigned| -> bool {
                     prepare.proposed_block_digest() == proposal.proposed_block_digest()
                 };
                 let prepares = self
                     .messages
-                    .take_valid_prepare_messages(view, verify_prepare_fn)
+                    .take_valid_prepare_messages(view, prepare_verify_fn)
                     .await;
 
                 let quorum = self.validator_manager.quorum(view.height);
@@ -740,6 +728,29 @@ where
                     *latest_self_round_change = Some(round_change);
                 }
             },
+        }
+    }
+
+    fn round_change_verify_fn<'a>(
+        &'a self,
+        height: u64,
+    ) -> impl Fn(&RoundChangeMessageSigned) -> bool + 'a {
+        move |round_change: &RoundChangeMessageSigned| {
+            let Some(prepared_proposed) = round_change.latest_prepared_proposed() else {
+                return true;
+            };
+
+            let prepared_certificate = prepared_proposed.prepared_certificate();
+            let proposed_block_digest = prepared_proposed.proposed_block().digest();
+            if prepared_certificate.proposal().proposed_block_digest() != proposed_block_digest {
+                return false;
+            }
+
+            self.verify_prepared_certificate(
+                prepared_certificate,
+                height,
+                round_change.view().round,
+            )
         }
     }
 
