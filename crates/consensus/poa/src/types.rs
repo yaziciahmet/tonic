@@ -319,7 +319,7 @@ impl RoundChangeMessageSigned {
     }
 
     /// Updates the round of the round change message, and resigns the message.
-    pub fn update_and_resign(&mut self, round: u32, signer: &Signer) {
+    pub fn update_and_resign(&mut self, round: u8, signer: &Signer) {
         self.message.view.round = round;
         let prehash = self.message.digest();
         self.signature = signer.sign_prehash(prehash);
@@ -425,11 +425,11 @@ pub type RawBlock = Vec<u8>;
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedBlock {
     raw_block: RawBlock,
-    round: u32,
+    round: u8,
 }
 
 impl ProposedBlock {
-    pub fn new(raw_block: RawBlock, round: u32) -> Self {
+    pub fn new(raw_block: RawBlock, round: u8) -> Self {
         Self { raw_block, round }
     }
 
@@ -437,7 +437,7 @@ impl ProposedBlock {
         &self.raw_block
     }
 
-    pub fn round(&self) -> u32 {
+    pub fn round(&self) -> u8 {
         self.round
     }
 
@@ -477,19 +477,19 @@ pub type CommitSeals = Vec<Signature>;
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct FinalizationProof {
-    round: u32,
+    round: u8,
     commit_seals: CommitSeals,
 }
 
 impl FinalizationProof {
-    pub fn new(round: u32, commit_seals: CommitSeals) -> Self {
+    pub fn new(round: u8, commit_seals: CommitSeals) -> Self {
         Self {
             round,
             commit_seals,
         }
     }
 
-    pub fn round(&self) -> u32 {
+    pub fn round(&self) -> u8 {
         self.round
     }
 
@@ -524,17 +524,17 @@ impl FinalizedBlock {
 #[derive(Clone, Copy, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct View {
     pub height: u64,
-    pub round: u32,
+    pub round: u8,
 }
 
 impl View {
-    pub fn new(height: u64, round: u32) -> Self {
+    pub fn new(height: u64, round: u8) -> Self {
         Self { height, round }
     }
 }
 
 pub fn digest_proposal(view: &View, proposed_block_digest: &[u8; 32]) -> [u8; 32] {
-    const PROPOSAL_SIZE: usize = 1 + 12 + 32;
+    const PROPOSAL_SIZE: usize = 1 + 9 + 32;
     let mut bytes = [0; PROPOSAL_SIZE];
     codec::serialize_to(
         &(MessageType::Proposal, view, proposed_block_digest),
@@ -544,7 +544,7 @@ pub fn digest_proposal(view: &View, proposed_block_digest: &[u8; 32]) -> [u8; 32
 }
 
 pub fn digest_prepare(view: &View, proposed_block_digest: &[u8; 32]) -> [u8; 32] {
-    const PREPARE_SIZE: usize = 1 + 12 + 32;
+    const PREPARE_SIZE: usize = 1 + 9 + 32;
     let mut bytes = [0; PREPARE_SIZE];
     codec::serialize_to(
         &(MessageType::Prepare, view, proposed_block_digest),
@@ -558,7 +558,7 @@ pub fn digest_commit(
     proposed_block_digest: &[u8; 32],
     commit_seal: &Signature,
 ) -> [u8; 32] {
-    const COMMIT_SIZE: usize = 1 + 12 + 32 + 65;
+    const COMMIT_SIZE: usize = 1 + 9 + 32 + 65;
     let mut bytes = [0; COMMIT_SIZE];
     codec::serialize_to(
         &(
@@ -580,7 +580,7 @@ pub fn digest_round_change(
     sha256(&bytes)
 }
 
-pub fn digest_block(raw_block: &[u8], round: u32) -> [u8; 32] {
+pub fn digest_block(raw_block: &[u8], round: u8) -> [u8; 32] {
     let data = codec::serialize(&(raw_block, round));
     sha256(&data)
 }

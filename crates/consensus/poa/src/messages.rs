@@ -464,7 +464,7 @@ impl<T> ViewSenderMap<T> {
 }
 
 #[derive(Debug)]
-struct ViewMap<T>(BTreeMap<u64, BTreeMap<u32, T>>);
+struct ViewMap<T>(BTreeMap<u64, BTreeMap<u8, T>>);
 
 impl<T> ViewMap<T> {
     fn new() -> Self {
@@ -476,7 +476,7 @@ impl<T> ViewMap<T> {
         self.0 = self.0.split_off(&height);
     }
 
-    fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u32, T> {
+    fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u8, T> {
         self.0.entry(view.height).or_default().entry(view.round)
     }
 }

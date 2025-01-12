@@ -740,7 +740,7 @@ where
         &self,
         prepared_certificate: &PreparedCertificate,
         height: u64,
-        round_limit: u32,
+        round_limit: u8,
     ) -> bool {
         let proposal = prepared_certificate.proposal();
         let proposal_view = proposal.view();
@@ -790,7 +790,7 @@ where
         true
     }
 
-    fn get_round_timeout(&self, round: u32) -> Duration {
+    fn get_round_timeout(&self, round: u8) -> Duration {
         const TABLE_SIZE: usize = (MAX_ROUND + 1) as usize;
         const TIMEOUT_MULTIPLIER: [u32; TABLE_SIZE] = {
             let mut arr = [0; TABLE_SIZE];
