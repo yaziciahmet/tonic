@@ -640,15 +640,20 @@ where
         )
     }
 
-    fn watch_future_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn watch_future_rcc(&self, view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+        let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
-            // TODO: actually watch for future rcc
-            tokio::time::sleep(Duration::from_secs(9999)).await;
-            let _ = tx.send(());
+            let result = ibft.wait_future_rcc(view).await;
+            let _ = tx.send(result);
         });
 
         (rx, task)
+    }
+
+    async fn wait_future_rcc(&self, view: View) {
+        // TODO: actually watch for future rcc
+        tokio::time::sleep(Duration::from_secs(9999)).await;
     }
 
     fn watch_future_proposal(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
