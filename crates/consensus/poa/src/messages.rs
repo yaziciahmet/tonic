@@ -348,7 +348,7 @@ impl ConsensusMessages {
     }
 
     /// Verifies and prunes the commit messages for the given view with the given verify_fn.
-    /// Returns commit seals if final count is >= quorum, and the final count.
+    /// Returns commit seals (if valid message count is >= quorum), and the valid message count.
     pub async fn get_valid_commit_seals<F>(
         &self,
         view: View,
@@ -383,6 +383,7 @@ impl ConsensusMessages {
     }
 
     /// Takes valid prepare messages for the given view verified with the verify_fn.
+    /// Use with caution as this does not do quorum check and removes all prepares.
     pub async fn take_valid_prepare_messages<F>(
         &self,
         view: View,
