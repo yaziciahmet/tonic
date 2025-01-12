@@ -132,7 +132,7 @@ impl ProposalMetadata {
     }
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, BorshSerialize, BorshDeserialize)]
 pub struct PrepareMessage {
     view: View,
     proposed_block_digest: [u8; 32],
@@ -160,7 +160,7 @@ impl PrepareMessage {
     }
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, BorshSerialize, BorshDeserialize)]
 pub struct PrepareMessageSigned {
     message: PrepareMessage,
     signature: Signature,
@@ -360,6 +360,34 @@ impl RoundChangeMessageSigned {
 
     pub fn recover_signer(&self) -> anyhow::Result<Address> {
         self.signature.recover_from_prehash(self.message.digest())
+    }
+}
+
+impl Clone for RoundChangeMessageSigned {
+    fn clone(&self) -> Self {
+        Self {
+            message: RoundChangeMessage {
+                view: self.view(),
+                latest_prepared_proposed: self.latest_prepared_proposed().as_ref().map(|p| {
+                    let pc = p.prepared_certificate();
+                    PreparedProposed {
+                        proposed_block: ProposedBlock {
+                            raw_block: p.proposed_block.raw_block.clone(),
+                            round: p.proposed_block.round,
+                        },
+                        prepared_certificate: PreparedCertificate {
+                            proposal_meta: ProposalMetadata {
+                                view: pc.proposal_meta.view,
+                                proposed_block_digest: pc.proposal_meta.proposed_block_digest,
+                                signature: pc.proposal_meta.signature,
+                            },
+                            prepare_messages: pc.prepare_messages.clone(),
+                        },
+                    }
+                }),
+            },
+            signature: self.signature,
+        }
     }
 }
 

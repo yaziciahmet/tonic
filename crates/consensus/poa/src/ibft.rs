@@ -15,7 +15,7 @@ use crate::types::{
     digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
     IBFTBroadcastMessage, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
     PreparedProposed, ProposalMessage, ProposalMessageSigned, RoundChangeMessage,
-    RoundChangeMessageSigned, RoundChangeMetadata,
+    RoundChangeMessageSigned,
 };
 
 use super::messages::ConsensusMessages;
@@ -90,8 +90,9 @@ where
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
             let (rcc_rx, rcc_task) = self.watch_future_rcc(view);
-            let (round_finished, round_task) =
-                self.start_ibft_round(state.clone(), latest_self_round_change.as_ref());
+            let (round_finished, round_task) = self
+                .start_ibft_round(state.clone(), latest_self_round_change.as_ref())
+                .await;
 
             let abort = move || {
                 round_task.abort();
@@ -137,7 +138,7 @@ where
         }
     }
 
-    fn start_ibft_round(
+    async fn start_ibft_round(
         &self,
         state: SharedRunState,
         latest_self_round_change: Option<&RoundChangeMessageSigned>,
@@ -159,23 +160,21 @@ where
                 }
             })
         } else {
-            let latest_self_round_change = match latest_self_round_change {
-                Some(round_change) => {
-                    if round_change.view() == view
-                        && self
-                            .validator_manager
-                            .is_proposer(self.signer.address(), view)
-                    {
-                        Some(round_change.clone_metadata())
-                    } else {
-                        None
-                    }
+            if let Some(round_change) = latest_self_round_change {
+                // Add self round change to messages only if view matches and we are proposer
+                if round_change.view() == view
+                    && self
+                        .validator_manager
+                        .is_proposer(self.signer.address(), view)
+                {
+                    self.messages
+                        .add_round_change_message(round_change.clone(), self.signer.address())
+                        .await;
                 }
-                None => None,
-            };
+            }
 
             tokio::spawn(async move {
-                match ibft.run_ibft_round_1(state, latest_self_round_change).await {
+                match ibft.run_ibft_round_1(state).await {
                     Ok(commit_seals) => {
                         let _ = tx.send(commit_seals);
                     }
@@ -212,11 +211,7 @@ where
         Ok(commit_seals)
     }
 
-    async fn run_ibft_round_1(
-        &self,
-        state: SharedRunState,
-        latest_self_round_change: Option<RoundChangeMetadata>,
-    ) -> Result<CommitSeals, IBFTError> {
+    async fn run_ibft_round_1(&self, state: SharedRunState) -> Result<CommitSeals, IBFTError> {
         let view = state.view;
         let quorum = self.validator_manager.quorum(view.height);
 
@@ -226,20 +221,13 @@ where
             RunState::Proposal,
             "Initial run state must be Proposal"
         );
-        if let Some(rc) = &latest_self_round_change {
-            assert_eq!(
-                rc.view(),
-                view,
-                "Self round change should only be provided if it is for the current view"
-            );
-        }
 
         let should_propose = self
             .validator_manager
             .is_proposer(self.signer.address(), view);
 
         let proposed_block_digest = if should_propose {
-            let _rcc = self.wait_for_rcc(view, latest_self_round_change).await;
+            let _rcc = self.wait_for_rcc(view).await;
             todo!()
         } else {
             let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
@@ -528,12 +516,7 @@ where
         commit_seals.expect("Must have value when reached quorum")
     }
 
-    async fn wait_for_rcc(
-        &self,
-        _view: View,
-        _latest_self_round_change: Option<RoundChangeMetadata>,
-    ) {
-    }
+    async fn wait_for_rcc(&self, _view: View) {}
 
     fn watch_future_rcc(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
