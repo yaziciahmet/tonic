@@ -324,8 +324,35 @@ where
         if should_propose {
             info!("We are the block proposer");
 
-            let (_rcc, _raw_block) = self.wait_for_rcc(view, quorum).await;
-            todo!()
+            let (rcc, raw_block) = self.wait_for_rcc(view, quorum).await;
+            let proposal = match raw_block {
+                Some(raw_block) => {
+                    debug!("Found previously proposed block in round change certificate");
+                    ProposalMessage::new(view, raw_block, Some(rcc))
+                }
+                None => {
+                    debug!("No proposed block in round change certificate");
+
+                    let raw_block = self
+                        .block_builder
+                        .build_block(view.height)
+                        .map_err(IBFTError::BlockBuild)?;
+                    debug!("Built the proposal block");
+
+                    ProposalMessage::new(view, raw_block, Some(rcc))
+                }
+            };
+
+            let proposal = proposal.into_signed(&self.signer);
+            let proposed_block_digest = proposal.proposed_block_digest();
+
+            self.broadcast
+                .broadcast_message(IBFTBroadcastMessage::Proposal(&proposal))
+                .await;
+
+            self.messages.add_proposal_message(proposal).await;
+
+            return Ok(proposed_block_digest);
         }
 
         let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
@@ -591,8 +618,8 @@ where
 
                 (metadata_list, Some(proposed_block.into_raw_block()))
             }
-            // No prepared certificate is found in any of the messages
             None => {
+                // No prepared certificate is found in any of the messages
                 let metadata_list = round_changes
                     .into_iter()
                     .map(|rc| rc.into_metadata().1)
