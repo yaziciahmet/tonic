@@ -686,10 +686,10 @@ where
 
                 let quorum = self.validator_manager.quorum(view.height);
                 assert!(
-                    prepares.len() >= quorum,
+                    prepares.len() >= quorum - 1,
                     "Got {} prepares while prepare quorum is {} in timeout handler",
                     prepares.len(),
-                    quorum,
+                    quorum - 1,
                 );
 
                 let prepared_proposed = PreparedProposed::new(proposal, prepares);
