@@ -21,6 +21,8 @@ use crate::MAX_ROUND;
 use super::messages::ConsensusMessages;
 use super::types::View;
 
+const ROUND_ARRAY_SIZE: usize = (MAX_ROUND + 1) as usize;
+
 #[derive(Clone)]
 pub struct IBFT<V, B, BV, BB>
 where
@@ -791,11 +793,10 @@ where
     }
 
     fn get_round_timeout(&self, round: u8) -> Duration {
-        const TABLE_SIZE: usize = (MAX_ROUND + 1) as usize;
-        const TIMEOUT_MULTIPLIER: [u32; TABLE_SIZE] = {
-            let mut arr = [0; TABLE_SIZE];
+        const TIMEOUT_MULTIPLIER: [u32; ROUND_ARRAY_SIZE] = {
+            let mut arr = [0; ROUND_ARRAY_SIZE];
             let mut i = 0;
-            while i < TABLE_SIZE {
+            while i < ROUND_ARRAY_SIZE {
                 arr[i] = 1 << i;
                 i += 1;
             }
