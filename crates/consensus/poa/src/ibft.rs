@@ -91,7 +91,7 @@ where
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
-            let (rcc_rx, rcc_task) = self.watch_future_rcc(view);
+            let (future_rcc_rx, future_rcc_task) = self.watch_future_rcc(view);
             let (round_finished, round_task) = self
                 .start_ibft_round(state.clone(), latest_self_round_change.as_ref())
                 .await;
@@ -99,7 +99,7 @@ where
             let abort = move || {
                 round_task.abort();
                 future_proposal_task.abort();
-                rcc_task.abort();
+                future_rcc_task.abort();
             };
 
             select! {
@@ -125,7 +125,7 @@ where
                     info!("Received future proposal");
                     abort();
                 }
-                _ = rcc_rx => {
+                Ok(rcc_round) = future_rcc_rx => {
                     info!("Got enough round change messages to create round change certificate");
                     abort();
                 }
@@ -627,8 +627,8 @@ where
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
-            let result = ibft.wait_future_rcc(view).await;
-            let _ = tx.send(result);
+            let rcc_round = ibft.wait_future_rcc(view).await;
+            let _ = tx.send(rcc_round);
         });
 
         (rx, task)
@@ -638,10 +638,47 @@ where
         let quorum = self.validator_manager.quorum(view.height);
 
         let round_change_verify_fn = self.round_change_verify_fn(view.height);
+        let mut round_change_rx = self.messages.subscribe_round_change();
+        let mut message_count_by_round =
+            self.messages.round_change_count_by_round(view.height).await;
+        // Check if any of the future rounds has quorum valid round change messages, and return early
+        for (round, count) in message_count_by_round.iter_mut().enumerate() {
+            let round = round as u8;
+            if round > view.round && *count >= quorum {
+                *count = self
+                    .messages
+                    .get_valid_round_change_count(
+                        View::new(view.height, round),
+                        &round_change_verify_fn,
+                    )
+                    .await;
+                if *count >= quorum {
+                    return round;
+                }
+            }
+        }
 
-        let message_count_by_round = self.messages.round_change_count_by_round(view.height).await;
+        // Wait until receiving quorum round changes in one of the future rounds
+        loop {
+            let new_view = round_change_rx
+                .recv()
+                .await
+                .expect("Round change subscription should not close");
 
-        todo!()
+            if new_view.height == view.height && new_view.round > view.round {
+                let count = &mut message_count_by_round[new_view.round as usize];
+                *count += 1;
+                if *count >= quorum {
+                    *count = self
+                        .messages
+                        .get_valid_round_change_count(new_view, &round_change_verify_fn)
+                        .await;
+                    if *count >= quorum {
+                        return new_view.round;
+                    }
+                }
+            }
+        }
     }
 
     fn watch_future_proposal(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {

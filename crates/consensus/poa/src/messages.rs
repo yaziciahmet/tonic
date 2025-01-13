@@ -447,16 +447,31 @@ impl ConsensusMessages {
         }
     }
 
-    pub async fn round_change_count_by_round(&self, height: u64) -> [u32; ROUND_ARRAY_SIZE] {
+    /// Returns the message count of each round as index in the resulting array.
+    pub async fn round_change_count_by_round(&self, height: u64) -> [usize; ROUND_ARRAY_SIZE] {
         let mut round_change_messages = self.round_change_messages.lock().await;
         let messages_by_round = round_change_messages.height_entry(height).or_default();
 
         let mut message_count_by_round = [0; ROUND_ARRAY_SIZE];
         for (round, messages) in messages_by_round {
-            message_count_by_round[*round as usize] = messages.len() as u32;
+            message_count_by_round[*round as usize] = messages.len();
         }
 
         message_count_by_round
+    }
+
+    /// Verifies and prunes the round change messages for the given view with the given verify_fn, and returns the final count.
+    pub async fn get_valid_round_change_count<F>(&self, view: View, verify_fn: F) -> usize
+    where
+        F: Fn(&RoundChangeMessageSigned) -> bool,
+    {
+        let mut round_change_mesages = self.round_change_messages.lock().await;
+        let messages = round_change_mesages.view_entry(view).or_default();
+
+        // Prune invalid messages
+        messages.retain(|_, round_change| verify_fn(round_change));
+
+        messages.len()
     }
 }
 
