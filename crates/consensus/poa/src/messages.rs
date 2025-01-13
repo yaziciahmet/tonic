@@ -210,7 +210,7 @@ pub struct ConsensusMessages {
     proposal_messages: Arc<Mutex<ViewMap<ProposalMessageSigned>>>,
     prepare_messages: Arc<Mutex<ViewSenderMap<PrepareMessageSigned>>>,
     commit_messages: Arc<Mutex<ViewSenderMap<CommitMessageSigned>>>,
-    // Storing also whether round change is verified as it will be useful
+    // Caching also whether round change is verified
     // since verifying round changes are expensive.
     round_change_messages: Arc<Mutex<ViewSenderMap<(RoundChangeMessageSigned, bool)>>>,
 
