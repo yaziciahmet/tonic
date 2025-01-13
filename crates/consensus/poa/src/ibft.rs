@@ -645,8 +645,8 @@ where
         let mut message_count_by_round =
             self.messages.round_change_count_by_round(view.height).await;
         // Check if any of the future rounds has quorum valid round change messages, and return early
-        for (round, count) in message_count_by_round.iter_mut().enumerate() {
-            let round = round as u8;
+        for (idx, count) in message_count_by_round.iter_mut().enumerate().rev() {
+            let round = idx as u8;
             if round > view.round && *count >= quorum {
                 *count = self
                     .messages
