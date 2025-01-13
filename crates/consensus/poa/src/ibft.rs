@@ -684,15 +684,21 @@ where
         }
     }
 
-    fn monitor_future_proposal(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn monitor_future_proposal(&self, view: View) -> (oneshot::Receiver<u8>, JoinHandle<()>) {
+        let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
-            // TODO: actually watch for future proposal
-            tokio::time::sleep(Duration::from_secs(9999)).await;
-            let _ = tx.send(());
+            let round = ibft.wait_future_proposal(view).await;
+            let _ = tx.send(round);
         });
 
         (rx, task)
+    }
+
+    async fn wait_future_proposal(&self, view: View) -> u8 {
+        // TODO: actually watch for future proposal
+        tokio::time::sleep(Duration::from_secs(9999)).await;
+        todo!()
     }
 
     async fn handle_timeout(
