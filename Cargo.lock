@@ -3717,15 +3717,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic"
-version = "0.1.0"
-dependencies = [
- "tokio",
- "tonic-tracing",
- "tracing",
-]
-
-[[package]]
 name = "tonic-consensus-poa"
 version = "0.1.0"
 dependencies = [
@@ -4533,4 +4524,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.96",
+]
+
+[[package]]
+name = "zktonic"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "tonic-tracing",
+ "tracing",
 ]

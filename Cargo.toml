@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "bin/tonic",
+  "bin/zktonic",
   "crates/consensus/poa",
   "crates/database",
   "crates/p2p",
@@ -16,11 +16,11 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0"
 authors = ["Ahmet Yazici"]
-repository = "https://github.com/yaziciahmet/tonic"
+repository = "https://github.com/yaziciahmet/zktonic"
 
 [workspace.dependencies]
 # Tonic dependencies
-tonic = { path = "bin/tonic", default-features = false }
+zktonic = { path = "bin/zktonic", default-features = false }
 tonic-consensus-poa = { path = "crates/consensus/poa", default-features = false }
 tonic-database = { path = "crates/database", default-features = false }
 tonic-p2p = { path = "crates/p2p", default-features = false }

@@ -1,5 +1,5 @@
 [package]
-name = "tonic"
+name = "zktonic"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
@@ -12,5 +12,5 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [[bin]]
-name = "tonic"
+name = "zktonic"
 path = "src/main.rs"
