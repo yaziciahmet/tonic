@@ -213,8 +213,6 @@ pub struct ConsensusMessages {
     prepare_messages: Arc<Mutex<ViewSenderMap<PrepareMessageSigned>>>,
     commit_messages: Arc<Mutex<ViewSenderMap<CommitMessageSigned>>>,
     // Caching also whether round change is verified since verifying round changes are expensive.
-    // This is doable in message store level because verify function is same for all usecases.
-    // If it were to ever change, this trick can no longer be done.
     round_change_messages: Arc<Mutex<ViewSenderMap<(RoundChangeMessageSigned, bool)>>>,
 
     proposal_tx: broadcast::Sender<View>,
