@@ -90,8 +90,8 @@ where
             info!("Round: {}", view.round);
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
-            let (future_proposal_rx, future_proposal_task) = self.watch_future_proposal(view);
-            let (future_rcc_rx, future_rcc_task) = self.watch_future_rcc(view);
+            let (future_proposal_rx, future_proposal_task) = self.monitor_future_proposal(view);
+            let (future_rcc_rx, future_rcc_task) = self.monitor_future_rcc(view);
             let (round_finished, round_task) = self
                 .start_ibft_round(state.clone(), latest_self_round_change.as_ref())
                 .await;
@@ -626,7 +626,7 @@ where
         )
     }
 
-    fn watch_future_rcc(&self, view: View) -> (oneshot::Receiver<u8>, JoinHandle<()>) {
+    fn monitor_future_rcc(&self, view: View) -> (oneshot::Receiver<u8>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
@@ -684,7 +684,7 @@ where
         }
     }
 
-    fn watch_future_proposal(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
+    fn monitor_future_proposal(&self, _view: View) -> (oneshot::Receiver<()>, JoinHandle<()>) {
         let (tx, rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             // TODO: actually watch for future proposal
