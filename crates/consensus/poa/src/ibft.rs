@@ -771,10 +771,10 @@ where
         }
     }
 
-    fn round_change_verify_fn<'a>(
-        &'a self,
+    fn round_change_verify_fn(
+        &self,
         height: u64,
-    ) -> impl Fn(&RoundChangeMessageSigned) -> bool + 'a {
+    ) -> impl Fn(&RoundChangeMessageSigned) -> bool + '_ {
         move |round_change: &RoundChangeMessageSigned| {
             let Some(prepared_proposed) = round_change.latest_prepared_proposed() else {
                 return true;
