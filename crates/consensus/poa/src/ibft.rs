@@ -360,85 +360,14 @@ where
             return Ok(proposed_block_digest);
         }
 
-        let proposal_verify_fn = |proposal: &ProposalMessageSigned| {
-            if !proposal.verify_block_digest() {
-                return Err(IBFTError::IncorrectProposalDigest);
-            }
-
-            let Some(rcc) = proposal.round_change_certificate() else {
-                return Err(IBFTError::MissingRoundChangeCertificate);
-            };
-            let round_changes = rcc.round_change_messages.as_slice();
-
-            if round_changes.len() < quorum {
-                return Err(IBFTError::RoundChangeCertificateQuorumNotReached);
-            }
-
-            let proposal_view = proposal.view();
-
-            let mut highest_round = 0;
-            let mut highest_round_pc: Option<&PreparedCertificate> = None;
-            let mut seen_validators = HashSet::with_capacity(round_changes.len());
-            for round_change in round_changes {
-                if round_change.view() != proposal_view {
-                    return Err(IBFTError::InvalidRoundChangeInCertificate);
-                }
-
-                let Ok(validator) = round_change.recover_signer() else {
-                    return Err(IBFTError::InvalidRoundChangeInCertificate);
-                };
-                if !self
-                    .validator_manager
-                    .is_validator(validator, proposal_view.height)
-                {
-                    return Err(IBFTError::InvalidRoundChangeInCertificate);
-                }
-
-                let inserted = seen_validators.insert(validator);
-                if !inserted {
-                    return Err(IBFTError::DuplicateRoundChangeInCertificate);
-                }
-
-                if let Some(pc) = round_change.latest_prepared_certificate() {
-                    let pc_round = pc.proposal().view().round;
-                    if pc_round > highest_round {
-                        highest_round = pc_round;
-                        highest_round_pc = Some(pc);
-                    }
-                }
-            }
-
-            let proposed_block = proposal.proposed_block();
-
-            if let Some(pc) = highest_round_pc {
-                // Proposed block must correspond to the highest round prepared certificate
-                // within the round change messages
-                let expected_digest = digest_block(proposed_block.raw_block(), highest_round);
-                if expected_digest != pc.proposal().proposed_block_digest() {
-                    return Err(IBFTError::InvalidRoundChangeInCertificate);
-                }
-
-                if !self.verify_prepared_certificate(pc, proposal_view.height, proposal_view.round)
-                {
-                    return Err(IBFTError::InvalidRoundChangeInCertificate);
-                }
-            } else {
-                // There are no prepared certificates in any of the round change messages.
-                // Verify the newly proposed block.
-                if let Err(err) = self.block_verifier.verify_block(proposed_block.raw_block()) {
-                    return Err(IBFTError::InvalidProposalBlock(err));
-                }
-            }
-
-            Ok(())
-        };
+        let proposal_verify_fn = self.proposal_1_verify_fn(quorum);
 
         // First subscribe so we don't miss the notification in the brief time we query the proposal.
         let mut proposal_rx = self.messages.subscribe_proposal();
 
         let digest = self
             .messages
-            .get_valid_proposal_digest(view, proposal_verify_fn)
+            .get_valid_proposal_digest(view, &proposal_verify_fn)
             .await;
         if let Some(digest) = digest {
             return digest;
@@ -774,6 +703,84 @@ where
                     *latest_self_round_change = Some(round_change);
                 }
             },
+        }
+    }
+
+    fn proposal_1_verify_fn(
+        &self,
+        quorum: usize,
+    ) -> impl Fn(&ProposalMessageSigned) -> Result<(), IBFTError> + '_ {
+        move |proposal: &ProposalMessageSigned| {
+            if !proposal.verify_block_digest() {
+                return Err(IBFTError::IncorrectProposalDigest);
+            }
+
+            let Some(rcc) = proposal.round_change_certificate() else {
+                return Err(IBFTError::MissingRoundChangeCertificate);
+            };
+            let round_changes = rcc.round_change_messages.as_slice();
+
+            if round_changes.len() < quorum {
+                return Err(IBFTError::RoundChangeCertificateQuorumNotReached);
+            }
+
+            let proposal_view = proposal.view();
+
+            let mut highest_round = 0;
+            let mut highest_round_pc: Option<&PreparedCertificate> = None;
+            let mut seen_validators = HashSet::with_capacity(round_changes.len());
+            for round_change in round_changes {
+                if round_change.view() != proposal_view {
+                    return Err(IBFTError::InvalidRoundChangeInCertificate);
+                }
+
+                let Ok(validator) = round_change.recover_signer() else {
+                    return Err(IBFTError::InvalidRoundChangeInCertificate);
+                };
+                if !self
+                    .validator_manager
+                    .is_validator(validator, proposal_view.height)
+                {
+                    return Err(IBFTError::InvalidRoundChangeInCertificate);
+                }
+
+                let inserted = seen_validators.insert(validator);
+                if !inserted {
+                    return Err(IBFTError::DuplicateRoundChangeInCertificate);
+                }
+
+                if let Some(pc) = round_change.latest_prepared_certificate() {
+                    let pc_round = pc.proposal().view().round;
+                    if pc_round > highest_round {
+                        highest_round = pc_round;
+                        highest_round_pc = Some(pc);
+                    }
+                }
+            }
+
+            let proposed_block = proposal.proposed_block();
+
+            if let Some(pc) = highest_round_pc {
+                // Proposed block must correspond to the highest round prepared certificate
+                // within the round change messages
+                let expected_digest = digest_block(proposed_block.raw_block(), highest_round);
+                if expected_digest != pc.proposal().proposed_block_digest() {
+                    return Err(IBFTError::InvalidRoundChangeInCertificate);
+                }
+
+                if !self.verify_prepared_certificate(pc, proposal_view.height, proposal_view.round)
+                {
+                    return Err(IBFTError::InvalidRoundChangeInCertificate);
+                }
+            } else {
+                // There are no prepared certificates in any of the round change messages.
+                // Verify the newly proposed block.
+                if let Err(err) = self.block_verifier.verify_block(proposed_block.raw_block()) {
+                    return Err(IBFTError::InvalidProposalBlock(err));
+                }
+            }
+
+            Ok(())
         }
     }
 
