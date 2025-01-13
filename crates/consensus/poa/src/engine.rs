@@ -37,7 +37,7 @@ where
         signer: Signer,
         base_round_time: Duration,
     ) -> Self {
-        let messages = ConsensusMessages::new();
+        let messages = ConsensusMessages::new(signer.address());
         Self {
             message_handler: MessageHandler::new(
                 messages.clone(),

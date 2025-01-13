@@ -207,6 +207,8 @@ where
 /// Also provides subscription capabilities.
 #[derive(Clone, Debug)]
 pub struct ConsensusMessages {
+    self_address: Address,
+
     proposal_messages: Arc<Mutex<ViewMap<ProposalMessageSigned>>>,
     prepare_messages: Arc<Mutex<ViewSenderMap<PrepareMessageSigned>>>,
     commit_messages: Arc<Mutex<ViewSenderMap<CommitMessageSigned>>>,
@@ -221,15 +223,10 @@ pub struct ConsensusMessages {
     round_change_tx: broadcast::Sender<View>,
 }
 
-impl Default for ConsensusMessages {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ConsensusMessages {
-    pub fn new() -> Self {
+    pub fn new(address: Address) -> Self {
         Self {
+            self_address: address,
             proposal_messages: Arc::new(Mutex::new(ViewMap::new())),
             prepare_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
             commit_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
@@ -304,7 +301,8 @@ impl ConsensusMessages {
         let mut round_change_messages = self.round_change_messages.lock().await;
         let entry = round_change_messages.sender_entry(view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            entry.insert((round_change, false));
+            // Insert as valid if coming from self
+            entry.insert((round_change, sender == self.self_address));
             let _ = self.round_change_tx.send(view);
         }
     }
