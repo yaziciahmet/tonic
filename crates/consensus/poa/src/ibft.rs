@@ -128,7 +128,7 @@ where
                 Ok(rcc_round) = future_rcc_rx => {
                     info!("Got enough round changes to create certificate");
                     abort();
-                    // We just move to the rcc round, if we are the proposer in the new round, 
+                    // We just move to the rcc round, if we are the proposer in the new round,
                     // we will create the certificate, and we don't need rcc if we are not the proposer
                     round = rcc_round;
                 }

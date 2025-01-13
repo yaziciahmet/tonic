@@ -210,7 +210,9 @@ pub struct ConsensusMessages {
     proposal_messages: Arc<Mutex<ViewMap<ProposalMessageSigned>>>,
     prepare_messages: Arc<Mutex<ViewSenderMap<PrepareMessageSigned>>>,
     commit_messages: Arc<Mutex<ViewSenderMap<CommitMessageSigned>>>,
-    round_change_messages: Arc<Mutex<ViewSenderMap<RoundChangeMessageSigned>>>,
+    // Storing also whether round change is verified as it will be useful
+    // since verifying round changes are expensive.
+    round_change_messages: Arc<Mutex<ViewSenderMap<(RoundChangeMessageSigned, bool)>>>,
 
     proposal_tx: broadcast::Sender<View>,
     prepare_tx: broadcast::Sender<View>,
@@ -301,7 +303,7 @@ impl ConsensusMessages {
         let mut round_change_messages = self.round_change_messages.lock().await;
         let entry = round_change_messages.sender_entry(view, sender);
         if let hash_map::Entry::Vacant(entry) = entry {
-            entry.insert(round_change);
+            entry.insert((round_change, false));
             let _ = self.round_change_tx.send(view);
         }
     }
@@ -434,13 +436,26 @@ impl ConsensusMessages {
         let mut round_change_messages = self.round_change_messages.lock().await;
         let messages = round_change_messages.view_entry(view).or_default();
 
-        // Prune invalid messages
-        // TODO: mark valid ones as true as this is expensive
-        messages.retain(|_, round_change| verify_fn(round_change));
+        // Prune invalid messages and mark valid messages
+        messages.retain(|_, (round_change, verified)| {
+            if *verified {
+                return true;
+            }
+
+            if !verify_fn(round_change) {
+                return false;
+            }
+
+            *verified = true;
+            return true;
+        });
 
         let count = messages.len();
         if count >= quorum {
-            let messages = mem::take(messages).into_values().collect();
+            let messages = mem::take(messages)
+                .into_values()
+                .map(|(round_change, _)| round_change)
+                .collect();
             (Some(messages), count)
         } else {
             (None, count)
@@ -468,8 +483,19 @@ impl ConsensusMessages {
         let mut round_change_mesages = self.round_change_messages.lock().await;
         let messages = round_change_mesages.view_entry(view).or_default();
 
-        // Prune invalid messages
-        messages.retain(|_, round_change| verify_fn(round_change));
+        // Prune invalid messages and mark valid messages
+        messages.retain(|_, (round_change, verified)| {
+            if *verified {
+                return true;
+            }
+
+            if !verify_fn(round_change) {
+                return false;
+            }
+
+            *verified = true;
+            return true;
+        });
 
         messages.len()
     }
