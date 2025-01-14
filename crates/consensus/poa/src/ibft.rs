@@ -70,7 +70,7 @@ where
         height: u64,
         mut cancel: oneshot::Receiver<()>,
     ) -> Option<FinalizedBlock> {
-        info!("Running consensus height {}", height);
+        info!("Running consensus height #{}", height);
 
         let quorum = self.validator_manager.quorum(height);
         assert_ne!(quorum, 0, "Quorum must be greater than 0");
@@ -87,7 +87,7 @@ where
             let view = View::new(height, round);
             let state = SharedRunState::new(view);
 
-            info!("Round: {}", view.round);
+            info!("Round: #{}", view.round);
 
             let timeout = tokio::time::sleep(self.get_round_timeout(view.round));
             let (future_proposal_rx, future_proposal_task) = self.monitor_future_proposal(view);
