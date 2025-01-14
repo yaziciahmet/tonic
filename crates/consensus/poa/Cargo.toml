@@ -22,3 +22,6 @@ tonic-tracing = { workspace = true }
 [features]
 default = []
 test-helpers = ["tonic-primitives/test-helpers"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(madsim)"] }

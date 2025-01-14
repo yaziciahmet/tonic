@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot};
+use tokio::task;
 use tonic_primitives::Signer;
 
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
@@ -76,6 +77,6 @@ where
     /// Spawns a background tokio task which handles incoming P2P consensus messages.
     pub fn spawn_message_handler(&self, p2p_rx: mpsc::Receiver<IBFTReceivedMessage>) {
         let message_handler = self.message_handler.clone();
-        tokio::spawn(message_handler.start(p2p_rx));
+        task::spawn(message_handler.start(p2p_rx));
     }
 }

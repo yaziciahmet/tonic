@@ -61,6 +61,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(madsim))]
     #[tokio::test]
     async fn ibft_run() {
         tonic_tracing::initialize_tracing(tracing::Level::DEBUG);

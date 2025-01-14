@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use tokio::select;
 use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
+use tokio::task::{self, JoinHandle};
 use tonic_primitives::Signer;
 use tracing::{debug, error, info};
 
@@ -156,7 +156,7 @@ where
         let (tx, rx) = oneshot::channel();
 
         let task = if view.round == 0 {
-            tokio::spawn(async move {
+            task::spawn(async move {
                 match ibft.run_ibft_round_0(state).await {
                     Ok(commit_seals) => {
                         let _ = tx.send(commit_seals);
@@ -181,7 +181,7 @@ where
                 }
             }
 
-            tokio::spawn(async move {
+            task::spawn(async move {
                 match ibft.run_ibft_round_1(state).await {
                     Ok(commit_seals) => {
                         let _ = tx.send(commit_seals);
@@ -565,7 +565,7 @@ where
     fn monitor_future_rcc(&self, view: View) -> (oneshot::Receiver<u8>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
-        let task = tokio::spawn(async move {
+        let task = task::spawn(async move {
             let rcc_round = ibft.wait_future_rcc(view).await;
             let _ = tx.send(rcc_round);
         });
@@ -627,7 +627,7 @@ where
     fn monitor_future_proposal(&self, view: View) -> (oneshot::Receiver<u8>, JoinHandle<()>) {
         let ibft = self.clone();
         let (tx, rx) = oneshot::channel();
-        let task = tokio::spawn(async move {
+        let task = task::spawn(async move {
             let round = ibft.wait_future_proposal(view).await;
             let _ = tx.send(round);
         });
