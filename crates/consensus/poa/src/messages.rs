@@ -498,7 +498,7 @@ impl ConsensusMessages {
             }
 
             *verified = true;
-            return true;
+            true
         });
 
         let count = messages.len();
