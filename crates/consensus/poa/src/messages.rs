@@ -90,7 +90,7 @@ where
                     return Err(anyhow!("Received proposal from non-proposer"));
                 }
 
-                self.messages.add_proposal_message(proposal).await;
+                self.messages.add_proposal_message(proposal, sender).await;
             }
             IBFTReceivedMessage::Prepare(prepare) => {
                 let view = prepare.view();
@@ -209,7 +209,13 @@ where
 pub struct ConsensusMessages {
     self_address: Address,
 
-    proposal_messages: Arc<Mutex<ViewMap<ProposalMessageSigned>>>,
+    // Proposal messages for round 0 of the given height.
+    proposal_0_messages: Arc<Mutex<HeightMap<ProposalMessageSigned>>>,
+    // Proposal messages for round > 0 of the given height. Whether proposal is valid is Option
+    // because proposals are not removed when invalid, hence, the difference between did not
+    // check and checked and it is invalid matters.
+    proposal_1_messages:
+        Arc<Mutex<ViewMap<(ProposalMessageSigned, Option<Result<(), IBFTError>>)>>>,
     prepare_messages: Arc<Mutex<ViewSenderMap<PrepareMessageSigned>>>,
     commit_messages: Arc<Mutex<ViewSenderMap<CommitMessageSigned>>>,
     // Caching verified as flag with the message. Round change verification
@@ -226,7 +232,8 @@ impl ConsensusMessages {
     pub fn new(address: Address) -> Self {
         Self {
             self_address: address,
-            proposal_messages: Arc::new(Mutex::new(ViewMap::new())),
+            proposal_0_messages: Arc::new(Mutex::new(HeightMap::new())),
+            proposal_1_messages: Arc::new(Mutex::new(ViewMap::new())),
             prepare_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
             commit_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
             round_change_messages: Arc::new(Mutex::new(ViewSenderMap::new())),
@@ -239,10 +246,14 @@ impl ConsensusMessages {
 
     /// Prunes messages less than height
     pub async fn prune(&self, height: u64) {
-        // Prune proposal
-        let mut proposal_messages = self.proposal_messages.lock().await;
-        proposal_messages.prune(height);
-        drop(proposal_messages);
+        // Prune proposal round = 0
+        let mut proposal_0_messages = self.proposal_0_messages.lock().await;
+        proposal_0_messages.prune(height);
+        drop(proposal_0_messages);
+        // Prune proposal round > 0
+        let mut proposal_1_messages = self.proposal_1_messages.lock().await;
+        proposal_1_messages.prune(height);
+        drop(proposal_1_messages);
         // Prune prepare
         let mut prepare_messages = self.prepare_messages.lock().await;
         prepare_messages.prune(height);
@@ -258,13 +269,23 @@ impl ConsensusMessages {
     }
 
     /// Adds a proposal message if not already exists for the view, and broadcasts it.
-    pub async fn add_proposal_message(&self, proposal: ProposalMessageSigned) {
+    pub async fn add_proposal_message(&self, proposal: ProposalMessageSigned, sender: Address) {
         let view = proposal.view();
-        let mut proposal_messages = self.proposal_messages.lock().await;
-        let entry = proposal_messages.view_entry(view);
-        if let btree_map::Entry::Vacant(entry) = entry {
-            entry.insert(proposal);
-            let _ = self.proposal_tx.send(view);
+        if view.round == 0 {
+            let mut proposal_messages = self.proposal_0_messages.lock().await;
+            let entry = proposal_messages.height_entry(view.height);
+            if let btree_map::Entry::Vacant(entry) = entry {
+                entry.insert(proposal);
+                let _ = self.proposal_tx.send(view);
+            }
+        } else {
+            let mut proposal_messages = self.proposal_1_messages.lock().await;
+            let entry = proposal_messages.view_entry(view);
+            if let btree_map::Entry::Vacant(entry) = entry {
+                // Insert as valid if coming from self
+                entry.insert((proposal, self.self_address.eq(&sender).then_some(Ok(()))));
+                let _ = self.proposal_tx.send(view);
+            }
         }
     }
 
@@ -336,12 +357,36 @@ impl ConsensusMessages {
     where
         F: Fn(&ProposalMessageSigned) -> Result<(), IBFTError>,
     {
-        let mut proposal_messages = self.proposal_messages.lock().await;
-        match proposal_messages.view_entry(view) {
-            btree_map::Entry::Vacant(_) => None,
-            btree_map::Entry::Occupied(entry) => {
-                let proposal = entry.get();
-                Some(verify_fn(proposal).map(|_| proposal.proposed_block_digest()))
+        if view.round == 0 {
+            let mut proposal_messages = self.proposal_0_messages.lock().await;
+            match proposal_messages.height_entry(view.height) {
+                btree_map::Entry::Vacant(_) => None,
+                btree_map::Entry::Occupied(entry) => {
+                    let proposal = entry.get();
+                    Some(verify_fn(proposal).map(|_| proposal.proposed_block_digest()))
+                }
+            }
+        } else {
+            let mut proposal_messages = self.proposal_1_messages.lock().await;
+            match proposal_messages.view_entry(view) {
+                btree_map::Entry::Vacant(_) => None,
+                btree_map::Entry::Occupied(mut entry) => {
+                    let (proposal, verification_result) = entry.get_mut();
+                    match verification_result {
+                        Some(Ok(())) => Some(Ok(proposal.proposed_block_digest())),
+                        Some(Err(e)) => Some(Err(e.clone())),
+                        None => match verify_fn(proposal) {
+                            Ok(()) => {
+                                *verification_result = Some(Ok(()));
+                                Some(Ok(proposal.proposed_block_digest()))
+                            }
+                            Err(e) => {
+                                *verification_result = Some(Err(e.clone()));
+                                Some(Err(e))
+                            }
+                        },
+                    }
+                }
             }
         }
     }
@@ -391,10 +436,18 @@ impl ConsensusMessages {
 
     /// Takes the proposal message for the given view.
     pub async fn take_proposal_message(&self, view: View) -> Option<ProposalMessageSigned> {
-        let mut proposal_messages = self.proposal_messages.lock().await;
-        match proposal_messages.view_entry(view) {
-            btree_map::Entry::Vacant(_) => None,
-            btree_map::Entry::Occupied(entry) => Some(entry.remove()),
+        if view.round == 0 {
+            let mut proposal_messages = self.proposal_0_messages.lock().await;
+            match proposal_messages.height_entry(view.height) {
+                btree_map::Entry::Vacant(_) => None,
+                btree_map::Entry::Occupied(entry) => Some(entry.remove()),
+            }
+        } else {
+            let mut proposal_messages = self.proposal_1_messages.lock().await;
+            match proposal_messages.view_entry(view) {
+                btree_map::Entry::Vacant(_) => None,
+                btree_map::Entry::Occupied(entry) => Some(entry.remove().0),
+            }
         }
     }
 
@@ -527,9 +580,39 @@ impl<T> ViewSenderMap<T> {
 }
 
 #[derive(Debug)]
-struct ViewMap<T>(BTreeMap<u64, BTreeMap<u8, T>>);
+struct ViewMap<T>(HeightMap<BTreeMap<u8, T>>);
 
 impl<T> ViewMap<T> {
+    fn new() -> Self {
+        Self(HeightMap::new())
+    }
+
+    fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u8, T> {
+        self.0
+            .height_entry(view.height)
+            .or_default()
+            .entry(view.round)
+    }
+}
+
+impl<T> Deref for ViewMap<T> {
+    type Target = HeightMap<BTreeMap<u8, T>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for ViewMap<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug)]
+struct HeightMap<T>(BTreeMap<u64, T>);
+
+impl<T> HeightMap<T> {
     fn new() -> Self {
         Self(Default::default())
     }
@@ -539,11 +622,7 @@ impl<T> ViewMap<T> {
         self.0 = self.0.split_off(&height);
     }
 
-    fn view_entry(&mut self, view: View) -> btree_map::Entry<'_, u8, T> {
-        self.0.entry(view.height).or_default().entry(view.round)
-    }
-
-    fn height_entry(&mut self, height: u64) -> btree_map::Entry<'_, u64, BTreeMap<u8, T>> {
+    fn height_entry(&mut self, height: u64) -> btree_map::Entry<'_, u64, T> {
         self.0.entry(height)
     }
 }

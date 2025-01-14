@@ -48,13 +48,15 @@ mod tests {
     }
 
     impl BlockVerifier for Mock {
-        fn verify_block(&self, _: &[u8]) -> anyhow::Result<()> {
+        type Error = String;
+        fn verify_block(&self, _: &[u8]) -> Result<(), Self::Error> {
             Ok(())
         }
     }
 
     impl BlockBuilder for Mock {
-        fn build_block(&self, _: u64) -> anyhow::Result<Vec<u8>> {
+        type Error = String;
+        fn build_block(&self, _: u64) -> Result<Vec<u8>, Self::Error> {
             Ok(vec![1, 2, 3])
         }
     }

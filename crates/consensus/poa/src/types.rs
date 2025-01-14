@@ -585,14 +585,14 @@ pub fn digest_block(raw_block: &[u8], round: u8) -> [u8; 32] {
     sha256(&data)
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum IBFTError {
     #[error("Incorrect proposal digest")]
     IncorrectProposalDigest,
     #[error("Invalid proposal block: {0}")]
-    InvalidProposalBlock(anyhow::Error),
+    InvalidProposalBlock(String),
     #[error("Block builder failed: {0}")]
-    BlockBuild(anyhow::Error),
+    BlockBuild(String),
     #[error("Missing round change certificate in proposal")]
     MissingRoundChangeCertificate,
     #[error("Round change certificate does not contain quorum number of messages")]

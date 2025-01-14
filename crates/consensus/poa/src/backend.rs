@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display};
+
 use async_trait::async_trait;
 use tonic_primitives::Address;
 
@@ -12,11 +14,15 @@ pub trait ValidatorManager: Clone + Send + Sync + 'static {
 }
 
 pub trait BlockVerifier: Clone + Send + Sync + 'static {
-    fn verify_block(&self, raw_block: &[u8]) -> anyhow::Result<()>;
+    type Error: Debug + Display;
+
+    fn verify_block(&self, raw_block: &[u8]) -> Result<(), Self::Error>;
 }
 
 pub trait BlockBuilder: Clone + Send + Sync + 'static {
-    fn build_block(&self, height: u64) -> anyhow::Result<Vec<u8>>;
+    type Error: Debug + Display;
+
+    fn build_block(&self, height: u64) -> Result<Vec<u8>, Self::Error>;
 }
 
 #[async_trait]

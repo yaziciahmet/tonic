@@ -249,7 +249,7 @@ where
             let raw_block = self
                 .block_builder
                 .build_block(view.height)
-                .map_err(IBFTError::BlockBuild)?;
+                .map_err(|e| IBFTError::BlockBuild(e.to_string()))?;
             debug!("Built the proposal block");
 
             let proposal = ProposalMessage::new(view, raw_block, None).into_signed(&self.signer);
@@ -259,7 +259,9 @@ where
                 .broadcast_message(IBFTBroadcastMessage::Proposal(&proposal))
                 .await;
 
-            self.messages.add_proposal_message(proposal).await;
+            self.messages
+                .add_proposal_message(proposal, self.signer.address())
+                .await;
 
             return Ok(proposed_block_digest);
         }
@@ -273,7 +275,7 @@ where
                 .block_verifier
                 .verify_block(proposal.proposed_block().raw_block())
             {
-                return Err(IBFTError::InvalidProposalBlock(err));
+                return Err(IBFTError::InvalidProposalBlock(err.to_string()));
             }
 
             Ok(())
@@ -341,7 +343,7 @@ where
                     let raw_block = self
                         .block_builder
                         .build_block(view.height)
-                        .map_err(IBFTError::BlockBuild)?;
+                        .map_err(|e| IBFTError::BlockBuild(e.to_string()))?;
                     debug!("Built the proposal block");
 
                     ProposalMessage::new(view, raw_block, Some(rcc))
@@ -355,7 +357,9 @@ where
                 .broadcast_message(IBFTBroadcastMessage::Proposal(&proposal))
                 .await;
 
-            self.messages.add_proposal_message(proposal).await;
+            self.messages
+                .add_proposal_message(proposal, self.signer.address())
+                .await;
 
             return Ok(proposed_block_digest);
         }
@@ -776,7 +780,7 @@ where
                 // There are no prepared certificates in any of the round change messages.
                 // Verify the newly proposed block.
                 if let Err(err) = self.block_verifier.verify_block(proposed_block.raw_block()) {
-                    return Err(IBFTError::InvalidProposalBlock(err));
+                    return Err(IBFTError::InvalidProposalBlock(err.to_string()));
                 }
             }
 
