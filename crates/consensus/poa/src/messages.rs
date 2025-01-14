@@ -10,7 +10,7 @@ use tonic_primitives::Address;
 use tracing::warn;
 
 use crate::backend::ValidatorManager;
-use crate::types::{CommitSeals, IBFTReceivedMessage};
+use crate::types::{CommitSeals, IBFTError, IBFTReceivedMessage};
 use crate::{MAX_ROUND, ROUND_ARRAY_SIZE};
 
 use super::types::{
@@ -327,13 +327,13 @@ impl ConsensusMessages {
 
     /// Verifies the proposal message for the given view with the given verify_fn, and returns it's digest.
     /// Returns `None` if proposal for the view doesn't exist.
-    pub async fn get_valid_proposal_digest<F, E>(
+    pub async fn get_valid_proposal_digest<F>(
         &self,
         view: View,
         verify_fn: F,
-    ) -> Option<Result<[u8; 32], E>>
+    ) -> Option<Result<[u8; 32], IBFTError>>
     where
-        F: Fn(&ProposalMessageSigned) -> Result<(), E>,
+        F: Fn(&ProposalMessageSigned) -> Result<(), IBFTError>,
     {
         let mut proposal_messages = self.proposal_messages.lock().await;
         match proposal_messages.view_entry(view) {

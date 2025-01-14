@@ -12,7 +12,7 @@ use tracing::{debug, error, info};
 use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
 use crate::types::{
     digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
-    IBFTBroadcastMessage, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
+    IBFTBroadcastMessage, IBFTError, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
     PreparedProposed, ProposalMessage, ProposalMessageSigned, RawBlock, RoundChangeCertificate,
     RoundChangeMessage, RoundChangeMessageSigned,
 };
@@ -917,22 +917,4 @@ impl SharedRunState {
     fn get(&self) -> RunState {
         RunState::from_u8(self.run_state.load(Ordering::SeqCst))
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-enum IBFTError {
-    #[error("Incorrect proposal digest")]
-    IncorrectProposalDigest,
-    #[error("Invalid proposal block: {0}")]
-    InvalidProposalBlock(anyhow::Error),
-    #[error("Block builder failed: {0}")]
-    BlockBuild(anyhow::Error),
-    #[error("Missing round change certificate in proposal")]
-    MissingRoundChangeCertificate,
-    #[error("Round change certificate does not contain quorum number of messages")]
-    RoundChangeCertificateQuorumNotReached,
-    #[error("Invalid round change message in the proposal certificate")]
-    InvalidRoundChangeInCertificate,
-    #[error("Duplicate round change message in certificate")]
-    DuplicateRoundChangeInCertificate,
 }
