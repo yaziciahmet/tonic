@@ -121,16 +121,19 @@ where
                         .into_proposed_block();
                     return Some(FinalizedBlock::new(proposed_block, commit_seals));
                 }
-                _ = future_proposal_rx => {
+                Ok(new_round) = future_proposal_rx => {
                     info!("Received future proposal");
                     abort();
+                    // We just move to the proposal round. When new round starts, the already verified
+                    // proposal will be queried and immediately will jump to the prepare state.
+                    round = new_round;
                 }
-                Ok(rcc_round) = future_rcc_rx => {
+                Ok(new_round) = future_rcc_rx => {
                     info!("Got enough round changes to create certificate");
                     abort();
                     // We just move to the rcc round, if we are the proposer in the new round,
                     // we will create the certificate, and we don't need rcc if we are not the proposer
-                    round = rcc_round;
+                    round = new_round;
                 }
                 _ = timeout => {
                     info!("Round timeout");
