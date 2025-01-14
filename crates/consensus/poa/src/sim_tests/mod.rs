@@ -11,6 +11,7 @@ use crate::engine::ConsensusEngine;
 #[madsim::test]
 async fn ibft_run() {
     tonic_tracing::initialize_tracing(tracing::Level::DEBUG);
+
     let mock = Mock {};
     let signer = Signer::random();
     let engine = ConsensusEngine::new(
