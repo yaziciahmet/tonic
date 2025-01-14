@@ -562,7 +562,7 @@ impl ConsensusMessages {
             }
 
             *verified = true;
-            return true;
+            true
         });
 
         messages.len()
