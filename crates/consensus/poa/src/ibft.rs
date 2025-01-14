@@ -633,9 +633,45 @@ where
     }
 
     async fn wait_future_proposal(&self, view: View) -> u8 {
-        // TODO: actually watch for future proposal
-        tokio::time::sleep(Duration::from_secs(9999)).await;
-        todo!()
+        let quorum = self.validator_manager.quorum(view.height);
+
+        let proposal_verify_fn = self.proposal_1_verify_fn(quorum);
+        let mut proposal_rx = self.messages.subscribe_proposal();
+        let round_has_proposal = self.messages.has_proposal_by_round(view.height).await;
+        for (idx, has_proposal) in round_has_proposal.into_iter().enumerate().rev() {
+            let round = idx as u8;
+            if round <= view.round {
+                break;
+            }
+
+            if has_proposal {
+                if let Some(Ok(_)) = self
+                    .messages
+                    .get_valid_proposal_digest(View::new(view.height, round), &proposal_verify_fn)
+                    .await
+                {
+                    return round;
+                }
+            }
+        }
+
+        // Wait until receiving a valid proposal for a future round
+        loop {
+            let new_view = proposal_rx
+                .recv()
+                .await
+                .expect("Proposal channel should not close");
+
+            if new_view.height == view.height && new_view.round > view.round {
+                if let Some(Ok(_)) = self
+                    .messages
+                    .get_valid_proposal_digest(new_view, &proposal_verify_fn)
+                    .await
+                {
+                    return new_view.round;
+                }
+            }
+        }
     }
 
     async fn handle_timeout(

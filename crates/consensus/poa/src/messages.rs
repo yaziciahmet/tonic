@@ -513,6 +513,23 @@ impl ConsensusMessages {
         }
     }
 
+    /// Returns the proposal existence of each round. Keep in mind that it marks false if the round has an invalid proposal.
+    pub async fn has_proposal_by_round(&self, height: u64) -> [bool; ROUND_ARRAY_SIZE] {
+        let mut proposal_messages = self.proposal_1_messages.lock().await;
+        let messages_by_round = proposal_messages.height_entry(height).or_default();
+
+        let mut round_has_proposal = [false; ROUND_ARRAY_SIZE];
+        for (round, (_, verification_result)) in messages_by_round {
+            if let Some(Err(_)) = verification_result {
+                // We can assume as if invalid proposals don't exist for the usecase of this function
+                continue;
+            }
+            round_has_proposal[*round as usize] = true;
+        }
+
+        round_has_proposal
+    }
+
     /// Returns the message count of each round as index in the resulting array.
     pub async fn round_change_count_by_round(&self, height: u64) -> [usize; ROUND_ARRAY_SIZE] {
         let mut round_change_messages = self.round_change_messages.lock().await;
