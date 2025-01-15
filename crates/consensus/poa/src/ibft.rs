@@ -113,13 +113,8 @@ where
                     info!("Finished IBFT round");
                     abort();
 
-                    let proposed_block = self
-                        .messages
-                        .take_proposal_message(view)
-                        .await
-                        .expect("Proposal must exist when round finished")
-                        .into_proposed_block();
-                    return Some(FinalizedBlock::new(proposed_block, commit_seals));
+                    let finalized_block = self.handle_round_finish(view, commit_seals).await;
+                    return Some(finalized_block);
                 }
                 Ok(new_round) = future_proposal_rx => {
                     info!("Received future proposal");
@@ -675,6 +670,20 @@ where
                 }
             }
         }
+    }
+
+    async fn handle_round_finish(&self, view: View, commit_seals: CommitSeals) -> FinalizedBlock {
+        let proposed_block = self
+            .messages
+            .take_proposal_message(view)
+            .await
+            .expect("Proposal must exist when round finished")
+            .into_proposed_block();
+        let finalized_block = FinalizedBlock::new(proposed_block, commit_seals);
+
+        self.broadcast.broadcast_block(&finalized_block).await;
+
+        finalized_block
     }
 
     async fn handle_timeout(
