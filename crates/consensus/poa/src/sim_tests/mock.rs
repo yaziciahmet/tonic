@@ -11,8 +11,9 @@ pub struct Mock {
 }
 
 impl Mock {
-    pub fn new(validators: Vec<MockValidator>) -> Self {
+    pub fn new(mut validators: Vec<MockValidator>) -> Self {
         assert!(!validators.is_empty());
+        validators.sort_by_key(|v| v.address);
         Self { validators }
     }
 }
