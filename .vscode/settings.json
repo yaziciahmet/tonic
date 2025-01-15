@@ -1,3 +1,4 @@
 {
-    "rust-analyzer.cargo.features": ["test-helpers", "client", "server", "k256-rand"]
+    "rust-analyzer.cargo.features": ["test-helpers", "client", "server", "k256-rand"],
+    "rust-analyzer.cargo.cfgs": ["madsim"]
 }

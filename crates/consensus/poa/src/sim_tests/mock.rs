@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use madsim::buggify::buggify_with_prob;
 use tokio::sync::mpsc;
 use tonic_primitives::Address;
 
@@ -51,7 +52,10 @@ impl Broadcast for Mock {
         for validator in &self.validators {
             if validator.address != sender {
                 // Both have the same message structure
-                let new_message: IBFTReceivedMessage = borsh::from_slice(&serialized).unwrap();
+                let mut new_message: IBFTReceivedMessage = borsh::from_slice(&serialized).unwrap();
+                if buggify_with_prob(0.05) {
+                    new_message.buggify_sig();
+                }
                 validator.p2p_tx.send(new_message).await.unwrap();
             }
         }
@@ -61,22 +65,30 @@ impl Broadcast for Mock {
 }
 
 impl BlockVerifier for Mock {
-    type Error = String;
+    type Error = &'static str;
 
     fn verify_block(&self, raw_block: &[u8]) -> Result<(), Self::Error> {
         if raw_block == &[1, 2, 3] {
             Ok(())
         } else {
-            Err("Invalid block".to_string())
+            Err("Invalid block")
         }
     }
 }
 
 impl BlockBuilder for Mock {
-    type Error = String;
+    type Error = &'static str;
 
     fn build_block(&self, _: u64) -> Result<Vec<u8>, Self::Error> {
-        Ok(vec![1, 2, 3])
+        if buggify_with_prob(0.05) {
+            if buggify_with_prob(0.2) {
+                Err("Could not build a block")
+            } else {
+                Ok(vec![1, 2])
+            }
+        } else {
+            Ok(vec![1, 2, 3])
+        }
     }
 }
 

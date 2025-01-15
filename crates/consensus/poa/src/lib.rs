@@ -3,7 +3,7 @@ pub mod codec;
 pub mod engine;
 pub mod ibft;
 pub mod messages;
-#[cfg(test)]
+#[cfg(all(test, madsim))]
 mod sim_tests;
 pub mod types;
 

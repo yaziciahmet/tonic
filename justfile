@@ -29,3 +29,6 @@ udeps:
 # Deterministic simulation tests. TODO: carry this to script or smh.
 sim_test:
     MADSIM_TEST_NUM=200 MADSIM_TEST_JOBS=8 RUSTFLAGS="--cfg madsim" cargo test --package tonic-consensus-poa --lib --features test-helpers --release -- sim_tests::ibft_run --exact --show-output --nocapture
+
+failed_test:
+    MADSIM_TEST_SEED=1736941468931126000 MADSIM_TEST_NUM=1 MADSIM_TEST_JOBS=8 RUSTFLAGS="--cfg madsim" cargo test --package tonic-consensus-poa --lib --features test-helpers --release -- sim_tests::ibft_run_buggified --exact --show-output --nocapture
