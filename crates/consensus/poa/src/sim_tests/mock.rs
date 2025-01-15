@@ -3,7 +3,7 @@ use madsim::buggify::buggify_with_prob;
 use tokio::sync::mpsc;
 use tonic_primitives::Address;
 
-use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
+use crate::backend::{BlockService, Broadcast, ValidatorManager};
 use crate::types::{FinalizedBlock, IBFTBroadcastMessage, IBFTReceivedMessage, View};
 
 #[derive(Clone)]
@@ -64,19 +64,7 @@ impl Broadcast for Mock {
     async fn broadcast_block(&self, _: &FinalizedBlock) {}
 }
 
-impl BlockVerifier for Mock {
-    type Error = &'static str;
-
-    fn verify_block(&self, raw_block: &[u8]) -> Result<(), Self::Error> {
-        if raw_block == &[1, 2, 3] {
-            Ok(())
-        } else {
-            Err("Invalid block")
-        }
-    }
-}
-
-impl BlockBuilder for Mock {
+impl BlockService for Mock {
     type Error = &'static str;
 
     fn build_block(&self, _: u64) -> Result<Vec<u8>, Self::Error> {
@@ -88,6 +76,14 @@ impl BlockBuilder for Mock {
             }
         } else {
             Ok(vec![1, 2, 3])
+        }
+    }
+
+    fn verify_block(&self, raw_block: &[u8]) -> Result<(), Self::Error> {
+        if raw_block == &[1, 2, 3] {
+            Ok(())
+        } else {
+            Err("Invalid block")
         }
     }
 }

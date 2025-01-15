@@ -13,16 +13,12 @@ pub trait ValidatorManager: Clone + Send + Sync + 'static {
     fn quorum(&self, height: u64) -> usize;
 }
 
-pub trait BlockVerifier: Clone + Send + Sync + 'static {
-    type Error: Debug + Display;
-
-    fn verify_block(&self, raw_block: &[u8]) -> Result<(), Self::Error>;
-}
-
-pub trait BlockBuilder: Clone + Send + Sync + 'static {
+pub trait BlockService: Clone + Send + Sync + 'static {
     type Error: Debug + Display;
 
     fn build_block(&self, height: u64) -> Result<Vec<u8>, Self::Error>;
+
+    fn verify_block(&self, raw_block: &[u8]) -> Result<(), Self::Error>;
 }
 
 #[async_trait]

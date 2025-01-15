@@ -4,36 +4,33 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task;
 use tonic_primitives::Signer;
 
-use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
+use crate::backend::{BlockService, Broadcast, ValidatorManager};
 use crate::ibft::IBFT;
 use crate::messages::{ConsensusMessages, MessageHandler};
 use crate::types::{FinalizedBlock, IBFTReceivedMessage};
 
 /// `ConsensusEngine` is the main wrapper that handles synchronization
 /// in between incoming P2P messages and the ongoing IBFT run.
-pub struct ConsensusEngine<V, B, BV, BB>
+pub struct ConsensusEngine<V, B, BS>
 where
     V: ValidatorManager,
     B: Broadcast,
-    BV: BlockVerifier,
-    BB: BlockBuilder,
+    BS: BlockService,
 {
     message_handler: MessageHandler<V>,
-    ibft: IBFT<V, B, BV, BB>,
+    ibft: IBFT<V, B, BS>,
 }
 
-impl<V, B, BV, BB> ConsensusEngine<V, B, BV, BB>
+impl<V, B, BS> ConsensusEngine<V, B, BS>
 where
     V: ValidatorManager,
     B: Broadcast,
-    BV: BlockVerifier,
-    BB: BlockBuilder,
+    BS: BlockService,
 {
     pub fn new(
         validator_manager: V,
         broadcast: B,
-        block_verifier: BV,
-        block_builder: BB,
+        block_service: BS,
         height: u64,
         signer: Signer,
         base_round_time: Duration,
@@ -50,8 +47,7 @@ where
                 messages,
                 validator_manager,
                 broadcast,
-                block_verifier,
-                block_builder,
+                block_service,
                 signer,
                 base_round_time,
             ),

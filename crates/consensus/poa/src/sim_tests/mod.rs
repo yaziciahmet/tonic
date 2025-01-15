@@ -23,7 +23,6 @@ async fn ibft_run() {
             mock.clone(),
             mock.clone(),
             mock.clone(),
-            mock.clone(),
             0,
             signer,
             Duration::from_secs(1),
@@ -62,7 +61,6 @@ async fn ibft_run_buggified() {
     let mut engines = Vec::with_capacity(signers.len());
     for (signer, p2p_rx) in signers.into_iter().zip(p2p_rxs) {
         let engine = ConsensusEngine::new(
-            mock.clone(),
             mock.clone(),
             mock.clone(),
             mock.clone(),

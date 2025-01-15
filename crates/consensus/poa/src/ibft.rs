@@ -9,7 +9,7 @@ use tokio::task::{self, JoinHandle};
 use tonic_primitives::Signer;
 use tracing::{debug, error, info};
 
-use crate::backend::{BlockBuilder, BlockVerifier, Broadcast, ValidatorManager};
+use crate::backend::{BlockService, Broadcast, ValidatorManager};
 use crate::types::{
     digest_block, CommitMessage, CommitMessageSigned, CommitSeals, FinalizedBlock,
     IBFTBroadcastMessage, IBFTError, PrepareMessage, PrepareMessageSigned, PreparedCertificate,
@@ -22,35 +22,31 @@ use super::messages::ConsensusMessages;
 use super::types::View;
 
 #[derive(Clone)]
-pub struct IBFT<V, B, BV, BB>
+pub struct IBFT<V, B, BS>
 where
     V: ValidatorManager,
     B: Broadcast,
-    BV: BlockVerifier,
-    BB: BlockBuilder,
+    BS: BlockService,
 {
     messages: ConsensusMessages,
     validator_manager: V,
     broadcast: B,
     signer: Signer,
-    block_verifier: BV,
-    block_builder: BB,
+    block_service: BS,
     base_round_time: Duration,
 }
 
-impl<V, B, BV, BB> IBFT<V, B, BV, BB>
+impl<V, B, BS> IBFT<V, B, BS>
 where
     V: ValidatorManager,
     B: Broadcast,
-    BV: BlockVerifier,
-    BB: BlockBuilder,
+    BS: BlockService,
 {
     pub fn new(
         messages: ConsensusMessages,
         validator_manager: V,
         broadcast: B,
-        block_verifier: BV,
-        block_builder: BB,
+        block_service: BS,
         signer: Signer,
         base_round_time: Duration,
     ) -> Self {
@@ -58,8 +54,7 @@ where
             messages,
             validator_manager,
             broadcast,
-            block_verifier,
-            block_builder,
+            block_service,
             signer,
             base_round_time,
         }
@@ -245,7 +240,7 @@ where
             info!("We are the block proposer");
 
             let raw_block = self
-                .block_builder
+                .block_service
                 .build_block(view.height)
                 .map_err(|e| IBFTError::BlockBuild(e.to_string()))?;
             debug!("Built the proposal block");
@@ -270,7 +265,7 @@ where
             }
 
             if let Err(err) = self
-                .block_verifier
+                .block_service
                 .verify_block(proposal.proposed_block().raw_block())
             {
                 return Err(IBFTError::InvalidProposalBlock(err.to_string()));
@@ -339,7 +334,7 @@ where
                     debug!("No proposed block in round change certificate");
 
                     let raw_block = self
-                        .block_builder
+                        .block_service
                         .build_block(view.height)
                         .map_err(|e| IBFTError::BlockBuild(e.to_string()))?;
                     debug!("Built the proposal block");
@@ -831,7 +826,7 @@ where
             } else {
                 // There are no prepared certificates in any of the round change messages.
                 // Verify the newly proposed block.
-                if let Err(err) = self.block_verifier.verify_block(proposed_block.raw_block()) {
+                if let Err(err) = self.block_service.verify_block(proposed_block.raw_block()) {
                     return Err(IBFTError::InvalidProposalBlock(err.to_string()));
                 }
             }
