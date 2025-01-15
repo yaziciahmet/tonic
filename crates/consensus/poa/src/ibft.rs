@@ -296,11 +296,12 @@ where
                     }
                 }
 
-                self
-                    .messages
+                self.messages
                     .get_valid_proposal_digest(view, proposal_verify_fn)
                     .await
-                    .expect("At this state, nothing else should be pruning or taking the proposal")?
+                    .expect(
+                        "At this state, nothing else should be pruning or taking the proposal",
+                    )?
             }
         };
 
@@ -384,11 +385,12 @@ where
                     }
                 }
 
-                self
-                    .messages
+                self.messages
                     .get_valid_proposal_digest(view, proposal_verify_fn)
                     .await
-                    .expect("At this state, nothing else should be pruning or taking the proposal")?
+                    .expect(
+                        "At this state, nothing else should be pruning or taking the proposal",
+                    )?
             }
         };
 
