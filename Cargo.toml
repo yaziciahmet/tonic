@@ -37,6 +37,7 @@ crypto-bigint = { version = "0.5.5", default-features = false, features = ["serd
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.24", default-features = false }
+madsim = { version = "0.2", default-features = false, features = ["madsim-macros"] }
 rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
 secp256k1 = { version = "0.30", default-features = false, features = ["global-context", "recovery"] }
 serde = { version = "1", default-features = false, features = ["derive"] }

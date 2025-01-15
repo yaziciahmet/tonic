@@ -17,7 +17,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-madsim = { version = "0.2", default-features = false, features = ["madsim-macros"] }
+madsim = { workspace = true }
 tonic-tracing = { workspace = true }
 
 [features]
