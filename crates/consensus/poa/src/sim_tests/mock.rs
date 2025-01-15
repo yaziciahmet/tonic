@@ -51,11 +51,12 @@ impl Broadcast for Mock {
         let serialized = borsh::to_vec(&message).unwrap();
         for validator in &self.validators {
             if validator.address != sender {
-                // Both have the same message structure
-                let mut new_message: IBFTReceivedMessage = borsh::from_slice(&serialized).unwrap();
                 if buggify_with_prob(0.05) {
-                    new_message.buggify_sig();
+                    // Skip sending to this validator
+                    continue;
                 }
+
+                let new_message: IBFTReceivedMessage = borsh::from_slice(&serialized).unwrap();
                 validator.p2p_tx.send(new_message).await.unwrap();
             }
         }

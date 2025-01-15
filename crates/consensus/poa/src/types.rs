@@ -20,34 +20,6 @@ pub enum IBFTReceivedMessage {
     RoundChange(RoundChangeMessageSigned),
 }
 
-impl IBFTReceivedMessage {
-    #[cfg(madsim)]
-    pub fn buggify_sig(&mut self) {
-        match self {
-            Self::Proposal(p) => {
-                let mut sig_bytes = p.signature.to_bytes();
-                sig_bytes[5] = sig_bytes[5].wrapping_add(1);
-                p.signature = Signature::from_bytes(sig_bytes).unwrap();
-            }
-            Self::Prepare(p) => {
-                let mut sig_bytes = p.signature.to_bytes();
-                sig_bytes[5] = sig_bytes[5].wrapping_add(1);
-                p.signature = Signature::from_bytes(sig_bytes).unwrap();
-            }
-            Self::Commit(c) => {
-                let mut sig_bytes = c.signature.to_bytes();
-                sig_bytes[5] = sig_bytes[5].wrapping_add(1);
-                c.signature = Signature::from_bytes(sig_bytes).unwrap();
-            }
-            Self::RoundChange(r) => {
-                let mut sig_bytes = r.signature.to_bytes();
-                sig_bytes[5] = sig_bytes[5].wrapping_add(1);
-                r.signature = Signature::from_bytes(sig_bytes).unwrap();
-            }
-        }
-    }
-}
-
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
