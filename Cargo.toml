@@ -49,11 +49,23 @@ tokio = { version = "0.2", package = "madsim-tokio", default-features = false, f
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = "0.3"
 
+[profile.dev]
+opt-level = 1
+
 [profile.release]
 opt-level = 3
 debug = 1
 lto = true
 codegen-units = 1
+
+[profile.sim]
+inherits = "release"
+debug = 2
+debug-assertions = true
+overflow-checks = true
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(madsim)"] }
 
 [patch.crates-io]
 getrandom = { git = "https://github.com/yaziciahmet/getrandom.git", rev = "cf65e83" }
