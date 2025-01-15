@@ -25,3 +25,7 @@ test:
 # Find unused dependencies
 udeps:
     cargo +nightly udeps
+
+# Deterministic simulation tests. TODO: carry this to script or smh.
+madsim:
+    MADSIM_TEST_NUM=100 MADSIM_TEST_JOBS=8 RUSTFLAGS="--cfg madsim" cargo test --package tonic-consensus-poa --lib --features test-helpers --release -- sim_tests::ibft_run --exact --show-output --nocapture
