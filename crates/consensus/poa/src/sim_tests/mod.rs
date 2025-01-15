@@ -49,7 +49,6 @@ async fn ibft_run() {
             assert!(b1.proof().commit_seals().len() >= mock.quorum(height));
         }
     }
-    drop(cancel_txs);
 }
 
 fn create_validators(
