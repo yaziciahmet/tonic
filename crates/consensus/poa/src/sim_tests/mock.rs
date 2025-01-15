@@ -62,6 +62,7 @@ impl Broadcast for Mock {
 
 impl BlockVerifier for Mock {
     type Error = String;
+
     fn verify_block(&self, raw_block: &[u8]) -> Result<(), Self::Error> {
         if raw_block == &[1, 2, 3] {
             Ok(())
@@ -73,6 +74,7 @@ impl BlockVerifier for Mock {
 
 impl BlockBuilder for Mock {
     type Error = String;
+
     fn build_block(&self, _: u64) -> Result<Vec<u8>, Self::Error> {
         Ok(vec![1, 2, 3])
     }
