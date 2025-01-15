@@ -731,7 +731,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1145d32e826a7748b69ee8fc62d3e6355ff7f1051df53141e7048162fc90481b"
 dependencies = [
  "data-encoding",
- "syn 2.0.96",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -1074,8 +1074,7 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4567c8db10ae91089c99af84c68c38da3ec2f087c3f82960bcdbf3656b6f4d7"
+source = "git+https://github.com/yaziciahmet/getrandom.git?rev=cf65e83#cf65e83f9df8954df101320de86f80dccfc6b68a"
 dependencies = [
  "cfg-if",
  "js-sys",
