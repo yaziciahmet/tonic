@@ -281,26 +281,29 @@ where
             .messages
             .get_valid_proposal_digest(view, proposal_verify_fn)
             .await;
-        if let Some(digest) = digest {
-            return digest;
-        }
 
-        // Wait until we receive a proposal from peers for the given view
-        loop {
-            let proposal_view = proposal_rx
-                .recv()
-                .await
-                .expect("Proposal subscriber channel should not close");
-            if proposal_view == view {
-                break;
+        let digest = match digest {
+            Some(digest) => digest?,
+            None => {
+                // Wait until we receive a proposal from peers for the given view
+                loop {
+                    let proposal_view = proposal_rx
+                        .recv()
+                        .await
+                        .expect("Proposal subscriber channel should not close");
+                    if proposal_view == view {
+                        break;
+                    }
+                }
+
+                self
+                    .messages
+                    .get_valid_proposal_digest(view, proposal_verify_fn)
+                    .await
+                    .expect("At this state, nothing else should be pruning or taking the proposal")?
             }
-        }
+        };
 
-        let digest = self
-            .messages
-            .get_valid_proposal_digest(view, proposal_verify_fn)
-            .await
-            .expect("At this state, nothing else should be pruning or taking the proposal")?;
         debug!("Received valid proposal message");
 
         let prepare = PrepareMessage::new(view, digest).into_signed(&self.signer);
@@ -366,26 +369,29 @@ where
             .messages
             .get_valid_proposal_digest(view, &proposal_verify_fn)
             .await;
-        if let Some(digest) = digest {
-            return digest;
-        }
 
-        // Wait until we receive a proposal from peers for the given view
-        loop {
-            let proposal_view = proposal_rx
-                .recv()
-                .await
-                .expect("Proposal subscriber channel should not close");
-            if proposal_view == view {
-                break;
+        let digest = match digest {
+            Some(digest) => digest?,
+            None => {
+                // Wait until we receive a proposal from peers for the given view
+                loop {
+                    let proposal_view = proposal_rx
+                        .recv()
+                        .await
+                        .expect("Proposal subscriber channel should not close");
+                    if proposal_view == view {
+                        break;
+                    }
+                }
+
+                self
+                    .messages
+                    .get_valid_proposal_digest(view, proposal_verify_fn)
+                    .await
+                    .expect("At this state, nothing else should be pruning or taking the proposal")?
             }
-        }
+        };
 
-        let digest = self
-            .messages
-            .get_valid_proposal_digest(view, proposal_verify_fn)
-            .await
-            .expect("At this state, nothing else should be pruning or taking the proposal")?;
         debug!("Received valid proposal message");
 
         let prepare = PrepareMessage::new(view, digest).into_signed(&self.signer);
