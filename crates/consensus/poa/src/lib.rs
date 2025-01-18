@@ -5,7 +5,6 @@ pub mod ibft;
 pub mod messages;
 #[cfg(all(test, madsim))]
 mod sim_tests;
-pub mod syncer;
 pub mod types;
 
 /// Total of 22 rounds with 2 seconds base timeout corresponds to about 97 days for a single height.
