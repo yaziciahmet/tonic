@@ -54,7 +54,6 @@ opt-level = 1
 
 [profile.release]
 opt-level = 3
-debug = 1
 lto = true
 codegen-units = 1
 
