@@ -11,6 +11,7 @@ use crate::types::{FinalizedBlock, IBFTReceivedMessage};
 
 /// `ConsensusEngine` is the main wrapper that handles synchronization
 /// in between incoming P2P messages and the ongoing IBFT run.
+#[derive(Clone)]
 pub struct ConsensusEngine<V, B, BS>
 where
     V: ValidatorManager,
