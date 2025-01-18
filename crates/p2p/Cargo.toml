@@ -13,7 +13,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 borsh = { workspace = true }
 futures = { workspace = true }
-libp2p = { version = "0.54", default-features = false, features = ["gossipsub", "identify", "kad", "macros", "noise", "secp256k1", "tcp", "tokio", "yamux"] }
+libp2p = { version = "0.55", default-features = false, features = ["gossipsub", "identify", "kad", "macros", "noise", "secp256k1", "tcp", "tokio", "yamux"] }
 sha2 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
