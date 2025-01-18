@@ -1,9 +1,7 @@
-use std::sync::Arc;
-
 use anyhow::anyhow;
 use async_trait::async_trait;
 use libp2p::gossipsub::TopicHash;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tonic_consensus_poa::types::{FinalizedBlock, IBFTBroadcastMessage, IBFTReceivedMessage};
 use tracing::warn;
 
@@ -21,7 +19,7 @@ pub struct P2PServiceProxy {
     request_sender: mpsc::Sender<P2PRequest>,
     // Consensus messages have only one receiver, hence mpsc instead of broadcast
     consensus_tx: mpsc::Sender<IBFTReceivedMessage>,
-    block_tx: broadcast::Sender<Arc<FinalizedBlock>>,
+    block_tx: mpsc::Sender<FinalizedBlock>,
 }
 
 impl P2PServiceProxy {
@@ -29,10 +27,10 @@ impl P2PServiceProxy {
         network_name: &str,
         request_sender: mpsc::Sender<P2PRequest>,
         consensus_tx: mpsc::Sender<IBFTReceivedMessage>,
+        block_tx: mpsc::Sender<FinalizedBlock>,
     ) -> Self {
         let codec = GossipCodec::new(MAX_MESSAGE_SIZE);
         let topics = GossipTopics::new(network_name);
-        let (block_tx, _) = broadcast::channel(CHANNEL_SIZE);
         Self {
             codec,
             topics,
@@ -68,14 +66,19 @@ impl P2PServiceProxy {
             }
             GossipTopicTag::Block => {
                 let block = self.codec.deserialize(&data)?;
-                let _ = self.block_tx.send(Arc::new(block));
+                if let Err(err) = self.block_tx.try_send(block) {
+                    match err {
+                        mpsc::error::TrySendError::Closed(_) => {
+                            panic!("Block message receiver should never be closed")
+                        }
+                        mpsc::error::TrySendError::Full(_) => {
+                            warn!("Block message channel is full")
+                        }
+                    }
+                }
             }
         };
         Ok(())
-    }
-
-    pub fn subscribe_block(&self) -> broadcast::Receiver<Arc<FinalizedBlock>> {
-        self.block_tx.subscribe()
     }
 }
 
@@ -113,18 +116,21 @@ impl tonic_consensus_poa::backend::Broadcast for P2PServiceProxy {
 
 /// Builds proxy with a sender channel.
 /// Returns proxy and the receiver channel.
-pub fn build_proxy(
-    network_name: &str,
-) -> (
-    P2PServiceProxy,
-    mpsc::Receiver<P2PRequest>,
-    mpsc::Receiver<IBFTReceivedMessage>,
-) {
-    let (request_sender, request_receiver) = mpsc::channel(CHANNEL_SIZE);
+pub fn build_proxy(network_name: &str) -> BuildProxyResult {
+    let (request_sender, request_rx) = mpsc::channel(CHANNEL_SIZE);
     let (consensus_tx, consensus_rx) = mpsc::channel(CHANNEL_SIZE);
-    (
-        P2PServiceProxy::new(network_name, request_sender, consensus_tx),
-        request_receiver,
+    let (block_tx, block_rx) = mpsc::channel(CHANNEL_SIZE);
+    BuildProxyResult {
+        proxy: P2PServiceProxy::new(network_name, request_sender, consensus_tx, block_tx),
+        request_rx,
         consensus_rx,
-    )
+        block_rx,
+    }
+}
+
+pub struct BuildProxyResult {
+    pub proxy: P2PServiceProxy,
+    pub request_rx: mpsc::Receiver<P2PRequest>,
+    pub consensus_rx: mpsc::Receiver<IBFTReceivedMessage>,
+    pub block_rx: mpsc::Receiver<FinalizedBlock>,
 }
