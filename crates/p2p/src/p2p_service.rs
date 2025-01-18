@@ -108,7 +108,7 @@ where
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(mut self) {
         loop {
             select! {
                 event = self.swarm.select_next_some() => {
